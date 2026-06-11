@@ -21,7 +21,6 @@ if uploaded_file is not None:
     # Membaca file txt
     df = pd.read_csv(uploaded_file, sep='\s+', header=None, names=column_names)
     
-    # Menampilkan sedikit cuplikan data asli
     st.subheader("Cuplikan Data Asli")
     st.dataframe(df.head())
     
@@ -30,28 +29,31 @@ if uploaded_file is not None:
     
     with tab1:
         st.header("Sinyal EMG (Full Wave Rectification - Manual)")
-        st.write("Grafik di bawah ini memplot data otot (kolom 7-15) yang sudah direktifikasi menggunakan logika Python murni tanpa fungsi matematika dari library.")
+        st.write("Berikut adalah grafik masing-masing otot. Nilai negatif sudah diubah menjadi positif secara manual.")
         
         # Mengambil daftar kolom EMG saja (indeks 6 sampai 14)
         emg_columns = column_names[6:15]
         
-        # Membuat DataFrame baru untuk menampung hasil rektifikasi manual
-        df_emg_rectified = pd.DataFrame()
-        
-        # Melakukan Full Wave Rectification secara manual dengan looping & list comprehension murni Python
+        # Looping untuk membuat grafik terpisah tiap kolom EMG
         for col in emg_columns:
-            # Logika manual: jika val >= 0 maka tetap val, jika kurang dari 0 maka diubah jadi -val (positif)
-            df_emg_rectified[col] = [val if val >= 0 else -val for val in df[col]]
-        
-        # Memasukkan kembali kolom 'time' untuk digunakan sebagai sumbu X (waktu)
-        df_emg_rectified['time'] = df['time']
-        
-        # Menjadikan kolom time sebagai index agar st.line_chart memplot sumbu X dengan benar
-        df_plot = df_emg_rectified.set_index('time')
-        
-        # Plotting interaktif ke Streamlit
-        st.line_chart(df_plot, height=500)
-        
+            # Membuat subheader untuk nama otot agar rapi
+            st.subheader(f"Otot: {col.title()}")
+            
+            # Melakukan rektifikasi manual hanya untuk kolom yang sedang di-loop
+            rectified_data = [val if val >= 0 else -val for val in df[col]]
+            
+            # Membuat DataFrame sementara khusus untuk 1 plot ini (waktu vs data otot)
+            df_single_plot = pd.DataFrame({
+                'time': df['time'],
+                col: rectified_data
+            })
+            
+            # Set index ke 'time' agar Streamlit otomatis menjadikannya sumbu X
+            df_single_plot = df_single_plot.set_index('time')
+            
+            # Plot grafik untuk otot ini saja
+            st.line_chart(df_single_plot, height=300)
+            
     with tab2:
         st.header("Ruang Kosong untuk Analisis Lanjut")
         st.write("Tab ini bisa kamu kembangkan nanti untuk memplot data sendi (hip, knee, ankle) atau data gait (heel, toe).")
