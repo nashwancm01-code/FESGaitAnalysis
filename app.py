@@ -64,7 +64,7 @@ if uploaded_file is not None:
     # MENU 1: MENAMPILKAN TABEL DATA ASLI
     # ==========================================
     st.markdown("---")
-    st.subheader("📋 Cuplikan Data Asli (Menu 1)")
+    st.subheader("📋 Cuplikan Data Asli")
     st.write("Tabel di bawah menampilkan 5 baris pertama dari data mentah untuk memastikan file terbaca dengan benar.")
     st.dataframe(df.head())
     st.markdown("---")
