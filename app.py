@@ -63,7 +63,7 @@ if uploaded_file is not None:
     tab1, tab2 = st.tabs(["Grafik EMG", "Tab Lainnya"])
     
     with tab1:
-        st.header("Sinyal EMG (Anti-Lag Version)")
+        st.header("Sinyal EMG")
         
         # --- DROPDOWN UNTUK MEMILIH OTOT ---
         selected_muscle = st.selectbox("Pilih Otot yang Ingin Ditampilkan:", emg_columns)
