@@ -38,6 +38,20 @@ if uploaded_file is not None:
         # Membaca data dari file teks
         df = pd.read_csv(uploaded_file, sep='\t')
         
+        # ==========================================
+        # BLOK PEMBERSIH DATA MENTAH (FIX ERROR STR)
+        # ==========================================
+        # 1. Ubah desimal koma (kalau ada) menjadi format titik
+        df = df.replace(',', '.', regex=True)
+        
+        # 2. Paksa semua isi tabel menjadi tipe angka (numeric).
+        # Jika ada teks satuan nyasar, otomatis diubah jadi NaN (kosong)
+        df = df.apply(pd.to_numeric, errors='coerce')
+        
+        # 3. Sapu/hapus baris yang rusak atau berisi NaN agar tabel bersih
+        df = df.dropna().reset_index(drop=True)
+        # ==========================================
+        
         # Asumsi kolom pertama adalah waktu, sisanya adalah data otot
         time_col = df.columns[0]
         emg_columns = df.columns[1:].tolist()
@@ -45,7 +59,7 @@ if uploaded_file is not None:
         # Ubah nama kolom waktu menjadi 'time' agar seragam
         df.rename(columns={time_col: 'time'}, inplace=True)
         
-        # Menghitung delta time (dt)
+        # Menghitung delta time (dt) -> Sekarang aman dari error pengurangan
         dt = df['time'].iloc[1] - df['time'].iloc[0]
         
         # Menyearahkan sinyal (Rectification) -> absolute value
