@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import math
 import io
+import matplotlib.pyplot as plt
+import numpy as np
 
 # --- 1. FUNGSI LPF MANUAL (WITH CACHE) ---
 @st.cache_data
@@ -60,79 +62,95 @@ if uploaded_file is not None:
     file_bytes = uploaded_file.getvalue()
     df, dt, emg_columns, rect_dict = load_and_rectify(file_bytes)
     
-    # ==========================================
-    # MENU 1: MENAMPILKAN TABEL DATA ASLI
-    # ==========================================
+    # MENU 1: Cuplikan Data
     st.markdown("---")
-    st.subheader("📋 Cuplikan Data Asli")
-    st.write("Tabel di bawah menampilkan 5 baris pertama dari data mentah untuk memastikan file terbaca dengan benar.")
+    st.subheader("📋 Cuplikan Data Asli (Menu 1)")
     st.dataframe(df.head())
     st.markdown("---")
     
-    # ==========================================
-    # MEMBUAT TAB UNTUK MENU SELANJUTNYA
-    # ==========================================
-    tab1, tab2 = st.tabs(["Grafik EMG & Aktivasi", "Tab Lainnya"])
+    tab1, tab2 = st.tabs(["Grafik EMG & Aktivasi", "Tab Analisis Lainnya"])
     
     with tab1:
-        st.header("Analisis Sinyal EMG & Aktivasi Otot")
+        st.header("Analisis Sinyal EMG & Aktivasi Otot (Menu 2)")
         
-        # Dropdown Pilih Otot agar browser ringan
-        selected_muscle = st.selectbox("Pilih Otot yang Ingin Dianalisis:", emg_columns)
-        
-        # Kolom Parameter untuk Slider LPF dan Threshold
-        col1, col2, col3 = st.columns(3)
+        # Kontrol Global untuk LPF
+        col1, col2 = st.columns(2)
         with col1:
             cutoff_freq = st.slider("Cutoff Frequency LPF (Hz)", min_value=0.5, max_value=20.0, value=5.0, step=0.5)
         with col2:
             filter_order = st.slider("Orde Filter LPF", min_value=1, max_value=5, value=2, step=1)
-        with col3:
-            threshold_val = st.slider("Threshold Aktivasi Otot", min_value=0.00, max_value=2.00, value=0.20, step=0.01)
-        
+            
         st.markdown("---")
         
-        # Proses Pengolahan Data
+        # =========================================================
+        # SEKSI BARU: MAP AKTIVASI SEMUA OTOT (SESUAI SLIDE DOSEN)
+        # =========================================================
+        st.subheader("📊 Peta Aktivasi Semua Otot (Threshold 5% Max)")
+        st.write("Grafik horizontal di bawah menunjukkan kapan setiap otot aktif (ON) secara bersamaan.")
+        
+        # Downsampling biar grafik enteng dan anti-lag / Page Unresponsive
+        step = 10
+        time_steps = df['time'][::step].tolist()
+        
+        # Siapkan canvas matplotlib
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Lakukan perulangan untuk memproses semua otot sekaligus
+        for idx, muscle in enumerate(emg_columns):
+            r_data = rect_dict[muscle]
+            l_data = apply_manual_lpf(r_data, dt, cutoff_freq, filter_order)
+            
+            # Hitung otomatis threshold 5% dari Nilai Maksimum LPF otot ini
+            max_lpf = max(l_data)
+            auto_threshold = 0.05 * max_lpf
+            
+            # Ambil sampel data sesuai step downsampling
+            l_data_sampled = l_data[::step]
+            
+            # Bikin list koordinat Y: isi dengan index otot jika ON, isi NaN jika OFF
+            y_vals = []
+            for val in l_data_sampled:
+                if val >= auto_threshold:
+                    y_vals.append(idx) # Taruh di baris ototnya
+                else:
+                    y_vals.append(np.nan) # Biarkan bolong/kosong
+            
+            # Plot baris horizontal tebal untuk otot ini
+            ax.plot(time_steps, y_vals, linewidth=8, solid_capstyle='butt', color='#1f77b4')
+            
+        # Percantik grafik agar persis seperti di diktat dosen
+        ax.set_yticks(range(len(emg_columns)))
+        ax.set_yticklabels([m.title() for m in emg_columns], fontsize=10)
+        ax.set_xlabel("Time (seconds)", fontsize=11)
+        ax.set_ylabel("Muscles", fontsize=11)
+        ax.set_title("Muscle Activation Profile Each Cycle", fontsize=12, fontweight='bold')
+        ax.grid(axis='x', linestyle='--', alpha=0.5)
+        ax.set_ylim(-0.5, len(emg_columns) - 0.5)
+        
+        # Tampilkan di Streamlit
+        st.pyplot(fig)
+        
+        # =========================================================
+        # SEKSI DETAIL: TAMPILAN PER INDIVIDU OTOT (UNTUK VALIDASI)
+        # =========================================================
+        st.markdown("---")
+        st.subheader("🔍 Analisis Detail per Otot")
+        selected_muscle = st.selectbox("Pilih satu otot untuk melihat proses filternya:", emg_columns)
+        
         raw_data = df[selected_muscle].tolist()
         rectified_data = rect_dict[selected_muscle]
         lpf_data = apply_manual_lpf(rectified_data, dt, cutoff_freq, filter_order)
         
-        # Logika Thresholding Manual (ON=1, OFF=0)
-        activation_data = [1 if val >= threshold_val else 0 for val in lpf_data]
-        threshold_line = [threshold_val] * len(lpf_data)
-        
-        # Trik downsampling visual (titik ke-10) biar anti-lag
-        step = 10 
-        
-        # Grafik A: Sinyal EMG Asli (Raw Data)
-        df_raw_plot = pd.DataFrame({
+        # Tampilkan grafik detail pembersihan sinyal individu
+        df_detail = pd.DataFrame({
             'time': df['time'][::step],
-            'Raw EMG Signal': raw_data[::step]
+            'Raw EMG': raw_data[::step],
+            'Rectified': rectified_data[::step],
+            'LPF Envelope': lpf_data[::step]
         }).set_index('time')
         
-        st.subheader(f"A. Sinyal EMG Asli (Raw Data) - {selected_muscle.title()}")
-        st.line_chart(df_raw_plot, height=200)
-        
-        # Grafik B: Hasil Rectified vs LPF Envelope
-        df_processed_plot = pd.DataFrame({
-            'time': df['time'][::step],
-            'Rectified Signal': rectified_data[::step],
-            'LPF (Envelope)': lpf_data[::step],
-            'Threshold Line': threshold_line[::step]
-        }).set_index('time')
-        
-        st.subheader(f"B. Hasil Penyearah (Rectified) & Filter (LPF)")
-        st.line_chart(df_processed_plot, height=250)
-        
-        # Grafik C: Grafik Aktivasi Kotak-Kotak (Hasil Thresholding)
-        df_activation_plot = pd.DataFrame({
-            'time': df['time'][::step],
-            'Muscle Activation (ON/OFF)': activation_data[::step]
-        }).set_index('time')
-        
-        st.subheader(f"C. Grafik Aktivasi Otot (On/Off)")
-        st.write("Nilai 1 berarti otot Aktif (ON), nilai 0 berarti otot Istirahat (OFF).")
-        st.line_chart(df_activation_plot, height=150)
-            
+        st.line_chart(df_detail, height=250)
+
     with tab2:
         st.header("Ruang Kosong untuk Analisis Lanjut")
-        st.write("Tab ini bisa kamu kembangkan nanti untuk data Sudut & Gait (Menu 3 & 4).")
+        st.write("Tab ini disiapkan untuk pengerjaan data Sudut Sendi & Gait Phase (Menu 3 & 4).")
