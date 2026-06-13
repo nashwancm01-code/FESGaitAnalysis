@@ -64,7 +64,7 @@ if uploaded_file is not None:
     # MENU 1: MENAMPILKAN TABEL DATA ASLI
     # ==========================================
     st.markdown("---")
-    st.subheader("📋 Cuplikan Data Asli (Menu 1)")
+    st.subheader("📋 Cuplikan Data Asli")
     st.write("Tabel di bawah menampilkan 5 baris pertama dari data mentah untuk memastikan file terbaca dengan benar.")
     st.dataframe(df.head())
     st.markdown("---")
@@ -75,7 +75,7 @@ if uploaded_file is not None:
     tab1, tab2 = st.tabs(["Grafik EMG & Aktivasi", "Tab Lainnya"])
     
     with tab1:
-        st.header("Analisis Sinyal EMG & Aktivasi Otot (Menu 2)")
+        st.header("Analisis Sinyal EMG & Aktivasi Otot")
         
         # Dropdown Pilih Otot agar browser ringan
         selected_muscle = st.selectbox("Pilih Otot yang Ingin Dianalisis:", emg_columns)
