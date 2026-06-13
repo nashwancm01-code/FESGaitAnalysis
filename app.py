@@ -39,17 +39,25 @@ if uploaded_file is not None:
         df = pd.read_csv(uploaded_file, sep='\t')
         
         # ==========================================
-        # BLOK PEMBERSIH DATA MENTAH (FIX ERROR STR)
+        # BLOK PEMBERSIH DATA MENTAH V2 (SUPER AMAN)
         # ==========================================
+        # 0. Hapus 'kolom siluman' (Unnamed columns) akibat extra tab di file .txt
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+        df = df.dropna(axis=1, how='all')
+        
         # 1. Ubah desimal koma (kalau ada) menjadi format titik
         df = df.replace(',', '.', regex=True)
         
-        # 2. Paksa semua isi tabel menjadi tipe angka (numeric).
-        # Jika ada teks satuan nyasar, otomatis diubah jadi NaN (kosong)
+        # 2. Paksa semua isi tabel menjadi tipe angka
         df = df.apply(pd.to_numeric, errors='coerce')
         
-        # 3. Sapu/hapus baris yang rusak atau berisi NaN agar tabel bersih
+        # 3. Sapu baris yang masih memiliki NaN
         df = df.dropna().reset_index(drop=True)
+        
+        # 4. REM DARURAT: Cek apakah data masih ada setelah dibersihkan
+        if len(df) < 2:
+            st.error("🚨 Waduh, datanya kosong setelah dibersihkan! Pastikan file .txt kamu hanya berisi angka yang dipisahkan oleh 'Tab'.")
+            st.stop() # Menghentikan sistem biar nggak muncul error merah yang bikin pusing
         # ==========================================
         
         # Asumsi kolom pertama adalah waktu, sisanya adalah data otot
@@ -59,7 +67,7 @@ if uploaded_file is not None:
         # Ubah nama kolom waktu menjadi 'time' agar seragam
         df.rename(columns={time_col: 'time'}, inplace=True)
         
-        # Menghitung delta time (dt) -> Sekarang aman dari error pengurangan
+        # Menghitung delta time (dt) -> Sekarang dijamin aman!
         dt = df['time'].iloc[1] - df['time'].iloc[0]
         
         # Menyearahkan sinyal (Rectification) -> absolute value
@@ -171,4 +179,4 @@ if uploaded_file is not None:
             st.info("Area ini disiapkan untuk data Hip, Knee, dan Ankle.")
 
     except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses file: {e}")
+        st.error(f"Terjadi kesalahan teknis saat memproses: {e}")
