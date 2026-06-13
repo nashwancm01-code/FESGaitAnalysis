@@ -64,7 +64,7 @@ if uploaded_file is not None:
     # MENU 1: MENAMPILKAN TABEL DATA ASLI
     # ==========================================
     st.markdown("---")
-    st.subheader("📋 Cuplikan Data Asli")
+    st.subheader("📋 Cuplikan Data Asli (Menu 1)")
     st.write("Tabel di bawah menampilkan 5 baris pertama dari data mentah untuk memastikan file terbaca dengan benar.")
     st.dataframe(df.head())
     st.markdown("---")
@@ -75,7 +75,7 @@ if uploaded_file is not None:
     tab1, tab2 = st.tabs(["Grafik EMG & Aktivasi", "Tab Lainnya"])
     
     with tab1:
-        st.header("Analisis Sinyal EMG & Aktivasi Otot")
+        st.header("Analisis Sinyal EMG & Aktivasi Otot (Menu 2)")
         
         # Dropdown Pilih Otot agar browser ringan
         selected_muscle = st.selectbox("Pilih Otot yang Ingin Dianalisis:", emg_columns)
@@ -92,6 +92,7 @@ if uploaded_file is not None:
         st.markdown("---")
         
         # Proses Pengolahan Data
+        raw_data = df[selected_muscle].tolist()
         rectified_data = rect_dict[selected_muscle]
         lpf_data = apply_manual_lpf(rectified_data, dt, cutoff_freq, filter_order)
         
@@ -102,26 +103,35 @@ if uploaded_file is not None:
         # Trik downsampling visual (titik ke-10) biar anti-lag
         step = 10 
         
-        # 1. Plot Grafik Utama (Raw Rectified vs LPF Envelope)
-        df_main_plot = pd.DataFrame({
+        # Grafik A: Sinyal EMG Asli (Raw Data)
+        df_raw_plot = pd.DataFrame({
+            'time': df['time'][::step],
+            'Raw EMG Signal': raw_data[::step]
+        }).set_index('time')
+        
+        st.subheader(f"A. Sinyal EMG Asli (Raw Data) - {selected_muscle.title()}")
+        st.line_chart(df_raw_plot, height=200)
+        
+        # Grafik B: Hasil Rectified vs LPF Envelope
+        df_processed_plot = pd.DataFrame({
             'time': df['time'][::step],
             'Rectified Signal': rectified_data[::step],
             'LPF (Envelope)': lpf_data[::step],
             'Threshold Line': threshold_line[::step]
         }).set_index('time')
         
-        st.subheader(f"1. Pemrosesan Sinyal EMG: {selected_muscle.title()}")
-        st.line_chart(df_main_plot, height=350)
+        st.subheader(f"B. Hasil Penyearah (Rectified) & Filter (LPF)")
+        st.line_chart(df_processed_plot, height=250)
         
-        # 2. Plot Grafik Aktivasi Kotak-Kotak (Hasil Thresholding)
+        # Grafik C: Grafik Aktivasi Kotak-Kotak (Hasil Thresholding)
         df_activation_plot = pd.DataFrame({
             'time': df['time'][::step],
             'Muscle Activation (ON/OFF)': activation_data[::step]
         }).set_index('time')
         
-        st.subheader(f"2. Grafik Aktivasi Otot (Thresholding Result)")
+        st.subheader(f"C. Grafik Aktivasi Otot (On/Off)")
         st.write("Nilai 1 berarti otot Aktif (ON), nilai 0 berarti otot Istirahat (OFF).")
-        st.line_chart(df_activation_plot, height=200)
+        st.line_chart(df_activation_plot, height=150)
             
     with tab2:
         st.header("Ruang Kosong untuk Analisis Lanjut")
