@@ -64,14 +64,14 @@ if uploaded_file is not None:
     
     # MENU 1: Cuplikan Data
     st.markdown("---")
-    st.subheader("📋 Cuplikan Data Asli (Menu 1)")
+    st.subheader("📋 Cuplikan Data Asli")
     st.dataframe(df.head())
     st.markdown("---")
     
     tab1, tab2 = st.tabs(["Grafik EMG & Aktivasi", "Tab Analisis Lainnya"])
     
     with tab1:
-        st.header("Analisis Sinyal EMG & Aktivasi Otot (Menu 2)")
+        st.header("Analisis Sinyal EMG & Aktivasi Otot")
         
         # Kontrol Global untuk LPF
         col1, col2 = st.columns(2)
