@@ -1,16 +1,16 @@
 import streamlit as st
-import pandas as pd
 import math
 import io
 import matplotlib.pyplot as plt
-import numpy as np
+import pandas as pd  # Hanya digunakan di layer akhir untuk visualisasi UI
 
-# --- 1. FUNGSI LPF MANUAL (WITH CACHE) ---
+# --- 1. FUNGSI LPF MANUAL (PURE PYTHON) ---
 @st.cache_data
 def apply_manual_lpf(data, dt, cutoff, order):
     if cutoff <= 0 or order < 1:
         return data
     
+    # Menghitung koefisien filter secara manual berdasarkan rumus cutoff adj
     fc_adj = cutoff / math.sqrt(2**(1.0 / order) - 1.0)
     tau = 1.0 / (2.0 * math.pi * fc_adj)
     alpha = dt / (tau + dt)
@@ -27,9 +27,9 @@ def apply_manual_lpf(data, dt, cutoff, order):
         y = y_new
     return y
 
-# --- 2. FUNGSI LOAD & RECTIFY (WITH CACHE) ---
+# --- 2. FUNGSI PARSING & RECTIFY MANUAL (TANPA READ_CSV) ---
 @st.cache_data
-def load_and_rectify(file_bytes):
+def load_and_rectify_manual(file_bytes):
     column_names = [
         "time", "heel", "toe", "hip", "knee", "ankle", 
         "gluteus maximus", "biceps femoris short", "biceps femoris long", 
@@ -37,35 +37,72 @@ def load_and_rectify(file_bytes):
         "soleus", "gastrocnemius", "tibialis anterior"
     ]
     
-    df = pd.read_csv(io.BytesIO(file_bytes), sep='\s+', header=None, names=column_names)
+    # Decode file bytes menjadi text strings per baris
+    raw_text = file_bytes.decode('utf-8').splitlines()
     
-    dt = df['time'].iloc[1] - df['time'].iloc[0]
+    # Inisialisasi dictionary kosong untuk menampung data mentah per kolom
+    parsed_data = {col: [] for col in column_names}
+    
+    # Proses parsing baris per baris secara manual (Pengganti pd.read_csv)
+    for line in raw_text:
+        if not line.strip():
+            continue  # Lewati baris kosong
+            
+        # Pisahkan data berdasarkan spasi/tab (whitespace)
+        parts = line.split()
+        
+        # Validasi: pastikan jumlah kolom pas (15 kolom)
+        if len(parts) == len(column_names):
+            try:
+                # Ubah string menjadi float manual satu per satu
+                for idx, col in enumerate(column_names):
+                    parsed_data[col].append(float(parts[idx]))
+            except ValueError:
+                # Jika baris berisi header teks atau error, otomatis dilewati (skip)
+                continue
+                
+    # Menghitung interval waktu (dt) manual
+    if len(parsed_data["time"]) > 1:
+        dt = parsed_data["time"][1] - parsed_data["time"][0]
+    else:
+        dt = 0.001
+        
     if dt <= 0:
         dt = 0.001
         
+    # Ambil daftar nama otot (kolom indeks ke 6 sampai 14)
     emg_columns = column_names[6:15]
     
+    # Proses Rektifikasi Manual (Mengubah nilai negatif ke positif tanpa .abs())
     rect_dict = {}
     for col in emg_columns:
-        rect_dict[col] = [val if val >= 0 else -val for val in df[col]]
+        rectified_list = []
+        for val in parsed_data[col]:
+            if val < 0:
+                rectified_list.append(-val)  # Dikali -1 jika negatif
+            else:
+                rectified_list.append(val)   # Tetap jika positif
+        rect_dict[col] = rectified_list
         
-    return df, dt, emg_columns, rect_dict
+    return parsed_data, dt, emg_columns, rect_dict
 
-# --- KONFIGURASI HALAMAN ---
+# --- 3. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Aplikasi Biomekanik & EMG", layout="wide")
-
 st.title("Aplikasi Pemrosesan Data Biomekanik")
 
 uploaded_file = st.file_uploader("Unggah file data (.txt)", type=["txt"])
 
 if uploaded_file is not None:
     file_bytes = uploaded_file.getvalue()
-    df, dt, emg_columns, rect_dict = load_and_rectify(file_bytes)
     
-    # MENU 1: Cuplikan Data
+    # Panggil fungsi parser manual kita
+    parsed_data, dt, emg_columns, rect_dict = load_and_rectify_manual(file_bytes)
+    
+    # MENU 1: Tampilkan Cuplikan Data Menggunakan Pandas Hanya untuk Render UI Tabel
     st.markdown("---")
     st.subheader("📋 Cuplikan Data Asli")
-    st.dataframe(df.head())
+    df_display = pd.DataFrame(parsed_data)
+    st.dataframe(df_display.head())
     st.markdown("---")
     
     tab1, tab2 = st.tabs(["Grafik EMG & Aktivasi", "Tab Analisis Lainnya"])
@@ -73,7 +110,6 @@ if uploaded_file is not None:
     with tab1:
         st.header("Analisis Sinyal EMG & Aktivasi Otot")
         
-        # Kontrol Global untuk LPF
         col1, col2 = st.columns(2)
         with col1:
             cutoff_freq = st.slider("Cutoff Frequency LPF (Hz)", min_value=0.5, max_value=20.0, value=5.0, step=0.5)
@@ -83,42 +119,41 @@ if uploaded_file is not None:
         st.markdown("---")
         
         # =========================================================
-        # SEKSI BARU: MAP AKTIVASI SEMUA OTOT (SESUAI SLIDE DOSEN)
+        # SEKSI MAP AKTIVASI SEMUA OTOT (LOGIKA MANUAL & ANTI-LAG)
         # =========================================================
         st.subheader("📊 Peta Aktivasi Semua Otot (Threshold 5% Max)")
         st.write("Grafik horizontal di bawah menunjukkan kapan setiap otot aktif (ON) secara bersamaan.")
         
-        # Downsampling biar grafik enteng dan anti-lag / Page Unresponsive
+        # Downsampling menggunakan slicing bawaan Python list [::step]
         step = 10
-        time_steps = df['time'][::step].tolist()
+        time_steps = parsed_data['time'][::step]
         
-        # Siapkan canvas matplotlib
+        # Setup canvas gambar
         fig, ax = plt.subplots(figsize=(12, 6))
         
-        # Lakukan perulangan untuk memproses semua otot sekaligus
         for idx, muscle in enumerate(emg_columns):
             r_data = rect_dict[muscle]
             l_data = apply_manual_lpf(r_data, dt, cutoff_freq, filter_order)
             
-            # Hitung otomatis threshold 5% dari Nilai Maksimum LPF otot ini
+            # Mencari nilai maksimum secara manual tanpa fungsi library khusus
             max_lpf = max(l_data)
             auto_threshold = 0.05 * max_lpf
             
-            # Ambil sampel data sesuai step downsampling
+            # Sampling data envelope sesuai step
             l_data_sampled = l_data[::step]
             
-            # Bikin list koordinat Y: isi dengan index otot jika ON, isi NaN jika OFF
+            # Logika Thresholding Manual menggunakan Float NaN bawaan Python untuk memutus garis
             y_vals = []
             for val in l_data_sampled:
                 if val >= auto_threshold:
-                    y_vals.append(idx) # Taruh di baris ototnya
+                    y_vals.append(idx)  # Isi nilai indeks y jika otot aktif (ON)
                 else:
-                    y_vals.append(np.nan) # Biarkan bolong/kosong
+                    y_vals.append(float('nan'))  # Isi Kosong (NaN) jika otot rileks (OFF)
             
-            # Plot baris horizontal tebal untuk otot ini
+            # Plot baris horizontal tebal untuk masing-masing otot
             ax.plot(time_steps, y_vals, linewidth=8, solid_capstyle='butt', color='#1f77b4')
             
-        # Percantik grafik agar persis seperti di diktat dosen
+        # Desain grafik agar sesuai standard diktat laboratorium
         ax.set_yticks(range(len(emg_columns)))
         ax.set_yticklabels([m.title() for m in emg_columns], fontsize=10)
         ax.set_xlabel("Time (seconds)", fontsize=11)
@@ -127,23 +162,22 @@ if uploaded_file is not None:
         ax.grid(axis='x', linestyle='--', alpha=0.5)
         ax.set_ylim(-0.5, len(emg_columns) - 0.5)
         
-        # Tampilkan di Streamlit
         st.pyplot(fig)
         
         # =========================================================
-        # SEKSI DETAIL: TAMPILAN PER INDIVIDU OTOT (UNTUK VALIDASI)
+        # SEKSI DETAIL: TAMPILAN PER INDIVIDU OTOT FOR VALIDASI
         # =========================================================
         st.markdown("---")
         st.subheader("🔍 Analisis Detail per Otot")
         selected_muscle = st.selectbox("Pilih satu otot untuk melihat proses filternya:", emg_columns)
         
-        raw_data = df[selected_muscle].tolist()
+        raw_data = parsed_data[selected_muscle]
         rectified_data = rect_dict[selected_muscle]
         lpf_data = apply_manual_lpf(rectified_data, dt, cutoff_freq, filter_order)
         
-        # Tampilkan grafik detail pembersihan sinyal individu
+        # Casting ke DataFrame di baris terakhir ini HANYA karena komponen st.line_chart butuh format ini
         df_detail = pd.DataFrame({
-            'time': df['time'][::step],
+            'time': parsed_data['time'][::step],
             'Raw EMG': raw_data[::step],
             'Rectified': rectified_data[::step],
             'LPF Envelope': lpf_data[::step]
