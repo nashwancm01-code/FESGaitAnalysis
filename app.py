@@ -150,7 +150,6 @@ def load_and_process_data(file_bytes):
 
 st.set_page_config(page_title="FP PSB - Gait & STFT", layout="wide")
 st.title("Gait Parameter Extraction & STFT Analysis")
-st.markdown("**Berdasarkan rancangan PyQt temanmu, dibangun murni dengan Python (Tanpa Numpy/Scipy)**")
 
 muscle_names = ["Gluteus Maximus", "Biceps Femoris Short", "Biceps Femoris Long", 
                 "Vastus Medialis", "Vastus Lateralis", "Rectus Femoris", 
