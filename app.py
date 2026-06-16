@@ -345,7 +345,6 @@ if uploaded_file is not None:
         # TAB 5: STFT ANALYSIS
         # ---------------------------------------------------------
         with tab5:
-            st.info("Peringatan: Proses STFT ini murni Python sehingga memakan waktu sedikit lebih lama dibandingkan Scipy.")
             
             stft_opts = ["heel", "toe", "hip", "knee", "ankle"] + muscle_names
             sel_stft = st.selectbox("Pilih Sinyal untuk Spectrogram:", stft_opts)
