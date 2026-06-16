@@ -1,7 +1,7 @@
 import streamlit as st
 import math
 import matplotlib.pyplot as plt
-import pandas as pd # Hanya untuk st.dataframe visualisasi tabel
+import pandas as pd # Hanya untuk st.dataframe visualisasi tabel dan struktur data grafik
 
 # ==========================================
 # --- 1. FUNGSI MATEMATIKA & DSP MANUAL ---
@@ -82,7 +82,6 @@ def load_and_process_data(file_bytes):
     dt = (parsed_data["time"][1] - parsed_data["time"][0]) if len(parsed_data["time"]) > 1 else 0.001
     emg_cols = column_names[6:15]
     
-    # Penyearahan gelombang (Rectification) manual
     rect_dict = {col: [abs(x) for x in parsed_data[col]] for col in emg_cols}
     return parsed_data, dt, emg_cols, rect_dict
 
@@ -109,47 +108,40 @@ if uploaded_file is not None:
     # ---------------------------------------------------------
     with tab1:
         st.header("Analisis Sinyal EMG")
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            cutoff_emg = st.slider("Cutoff Frequency LPF (Hz) EMG", 0.5, 20.0, 5.0, key='emg_cutoff')
-            muscle = st.selectbox("Pilih Otot untuk Grafik Raw/LPF:", emg_cols)
+        cutoff_emg = st.slider("Cutoff Frequency LPF (Hz) EMG", 0.5, 20.0, 5.0, key='emg_cutoff')
+        muscle = st.selectbox("Pilih Otot untuk Grafik Raw/LPF:", emg_cols)
         
-        # Proses 1 Otot Pilihan untuk Grafik 1 & 2
         raw_emg = parsed_data[muscle]
         rect_emg = rect_dict[muscle]
         lpf_emg = apply_manual_lpf(rect_emg, dt, cutoff_emg, 2)
         
-        # Plot 1: Raw Signal
+        # Plot 1: Raw Signal (Dibuat melandai kesamping)
         st.subheader(f"1. Raw Signal: {muscle.title()}")
-        fig_raw, ax_raw = plt.subplots(figsize=(10, 3))
+        fig_raw, ax_raw = plt.subplots(figsize=(12, 2.2))
         ax_raw.plot(time_data, raw_emg, color='gray', linewidth=0.8)
         ax_raw.set_ylabel("Amplitudo (mV)")
         ax_raw.set_xlabel("Waktu (s)")
-        st.pyplot(fig_raw)
+        st.pyplot(fig_raw, use_container_width=True)
         
         # Plot 2: Rectified & LPF
         st.subheader(f"2. Rectified & LPF Signal: {muscle.title()}")
-        fig_lpf, ax_lpf = plt.subplots(figsize=(10, 3))
+        fig_lpf, ax_lpf = plt.subplots(figsize=(12, 2.2))
         ax_lpf.plot(time_data, rect_emg, color='lightblue', alpha=0.6, label="Rectified")
         ax_lpf.plot(time_data, lpf_emg, color='red', linewidth=1.5, label="LPF (Envelope)")
         ax_lpf.legend()
         ax_lpf.set_ylabel("Amplitudo (mV)")
         ax_lpf.set_xlabel("Waktu (s)")
-        st.pyplot(fig_lpf)
+        st.pyplot(fig_lpf, use_container_width=True)
         
-        # Plot 3: REVISI - Muscle Activation (Gantt Chart style) untuk SEMUA OTOT
+        # Plot 3: Muscle Activation (Gantt Chart style)
         st.subheader("3. Muscle Activation Each Cycle (Semua Otot - Threshold 5%)")
-        fig_act, ax_act = plt.subplots(figsize=(10, 6))
-        
+        fig_act, ax_act = plt.subplots(figsize=(12, 4.5))
         yticks_pos = []
         yticklabels = []
         
-        # Loop semua 9 otot untuk mencari kapan mereka aktif
         for i, m_name in enumerate(emg_cols):
             m_lpf = apply_manual_lpf(rect_dict[m_name], dt, cutoff_emg, 2)
             m_thresh = get_max_value(m_lpf) * 0.05
-            
-            # Algoritma manual mencari rentang waktu aktif (start, duration)
             active_ranges = []
             is_active = False
             start_time = 0
@@ -163,11 +155,10 @@ if uploaded_file is not None:
                     duration = time_data[j] - start_time
                     active_ranges.append((start_time, duration))
             
-            if is_active: # Tutup rentang jika aktif sampai akhir data
+            if is_active:
                 duration = time_data[-1] - start_time
                 active_ranges.append((start_time, duration))
             
-            # Plot horizontal bar (Gantt) untuk otot ini
             y_pos = i * 10
             ax_act.broken_barh(active_ranges, (y_pos + 2, 6), facecolors='#1f497d')
             yticks_pos.append(y_pos + 5)
@@ -176,9 +167,8 @@ if uploaded_file is not None:
         ax_act.set_yticks(yticks_pos)
         ax_act.set_yticklabels(yticklabels)
         ax_act.set_xlabel("Waktu (s)")
-        ax_act.set_title("Grafik Aktivasi Otot")
         ax_act.grid(axis='x', linestyle='--', alpha=0.7)
-        st.pyplot(fig_act)
+        st.pyplot(fig_act, use_container_width=True)
 
     # ---------------------------------------------------------
     # TAB 2: GAIT ANALYSIS
@@ -189,36 +179,35 @@ if uploaded_file is not None:
         
         raw_heel = parsed_data['heel']
         raw_toe = parsed_data['toe']
-        
         filt_heel = apply_manual_lpf(raw_heel, dt, cutoff_gait, 2)
         filt_toe = apply_manual_lpf(raw_toe, dt, cutoff_gait, 2)
         
         # Plot 1: Input Signal
         st.subheader("1. Input Signal (Raw Heel & Toe)")
-        fig_g1, ax_g1 = plt.subplots(figsize=(12, 3))
+        fig_g1, ax_g1 = plt.subplots(figsize=(12, 2.2))
         ax_g1.plot(time_data, raw_heel, label='Heel Raw', color='blue', alpha=0.5)
         ax_g1.plot(time_data, raw_toe, label='Toe Raw', color='red', alpha=0.5)
         ax_g1.set_ylabel("Amplitudo (V)")
         ax_g1.set_xlabel("Waktu (s)")
         ax_g1.legend()
-        st.pyplot(fig_g1)
+        st.pyplot(fig_g1, use_container_width=True)
         
         # Plot 2: Filtered Output
         st.subheader("2. Filtered Output")
-        fig_g2, ax_g2 = plt.subplots(figsize=(12, 3))
+        fig_g2, ax_g2 = plt.subplots(figsize=(12, 2.2))
         ax_g2.plot(time_data, filt_heel, label='Heel Filtered', color='blue')
         ax_g2.plot(time_data, filt_toe, label='Toe Filtered', color='red')
         ax_g2.set_ylabel("Amplitudo (V)")
         ax_g2.set_xlabel("Waktu (s)")
         ax_g2.legend()
-        st.pyplot(fig_g2)
+        st.pyplot(fig_g2, use_container_width=True)
         
         # Plot 3: Threshold 5%
         st.subheader("3. Normalisasi Threshold 5% & Phase Detection")
         thresh_heel_val = get_max_value(filt_heel) * 0.05
         thresh_toe_val = get_max_value(filt_toe) * 0.05
         
-        fig_g3, ax_g3 = plt.subplots(figsize=(12, 4))
+        fig_g3, ax_g3 = plt.subplots(figsize=(12, 2.5))
         ax_g3.plot(time_data, filt_heel, label='Heel', color='blue')
         ax_g3.plot(time_data, filt_toe, label='Toe', color='red')
         ax_g3.axhline(thresh_heel_val, color='green', linestyle='--', linewidth=1, label='Threshold Heel')
@@ -232,7 +221,7 @@ if uploaded_file is not None:
         ax_g3.set_xlabel("Waktu (s)")
         ax_g3.legend()
         ax_g3.grid(True)
-        st.pyplot(fig_g3)
+        st.pyplot(fig_g3, use_container_width=True)
         
         # SEGMENTASI KE 0-100% CYCLES
         if len(heel_strikes_idx) >= 2:
@@ -249,45 +238,46 @@ if uploaded_file is not None:
             toe_norm = normalize_to_100_percent(filt_toe[start_idx:end_idx])
             percent_axis = list(range(101))
             
-            # REVISI: Plot Joint Angles Vertikal Ke Bawah
-            fig_j, ax_j = plt.subplots(3, 1, figsize=(10, 12))
-            fig_j.tight_layout(pad=5.0) # Memberi jarak agar label tidak bertumpuk
+            # --- REVISI UTAMA: Masing-masing sendi dipisah sendiri-sendiri agar memanjang menyamping ---
+            # Hip Joint
+            fig_hip, ax_hip = plt.subplots(figsize=(12, 2.2))
+            ax_hip.plot(percent_axis, hip_norm, color='purple', linewidth=2)
+            ax_hip.set_title("Hip Joint Angle Breakdown", fontsize=11, fontweight='bold')
+            ax_hip.set_ylabel("Sudut (Derajat)")
+            ax_hip.set_xlabel("% Gait Cycle")
+            ax_hip.grid(True)
+            st.pyplot(fig_hip, use_container_width=True)
             
-            # Hip
-            ax_j[0].plot(percent_axis, hip_norm, color='purple', linewidth=2)
-            ax_j[0].set_title("Hip Joint Angle", fontsize=14)
-            ax_j[0].set_ylabel("Sudut (Derajat)", fontsize=12)
-            ax_j[0].set_xlabel("% Gait Cycle", fontsize=12)
-            ax_j[0].grid(True)
+            # Knee Joint
+            fig_knee, ax_knee = plt.subplots(figsize=(12, 2.2))
+            ax_knee.plot(percent_axis, knee_norm, color='teal', linewidth=2)
+            ax_knee.set_title("Knee Joint Angle Breakdown", fontsize=11, fontweight='bold')
+            ax_knee.set_ylabel("Sudut (Derajat)")
+            ax_knee.set_xlabel("% Gait Cycle")
+            ax_knee.grid(True)
+            st.pyplot(fig_knee, use_container_width=True)
             
-            # Knee
-            ax_j[1].plot(percent_axis, knee_norm, color='teal', linewidth=2)
-            ax_j[1].set_title("Knee Joint Angle", fontsize=14)
-            ax_j[1].set_ylabel("Sudut (Derajat)", fontsize=12)
-            ax_j[1].set_xlabel("% Gait Cycle", fontsize=12)
-            ax_j[1].grid(True)
+            # Ankle Joint
+            fig_ankle, ax_ankle = plt.subplots(figsize=(12, 2.2))
+            ax_ankle.plot(percent_axis, ankle_norm, color='darkorange', linewidth=2)
+            ax_ankle.set_title("Ankle Joint Angle Breakdown", fontsize=11, fontweight='bold')
+            ax_ankle.set_ylabel("Sudut (Derajat)")
+            ax_ankle.set_xlabel("% Gait Cycle")
+            ax_ankle.grid(True)
+            st.pyplot(fig_ankle, use_container_width=True)
             
-            # Ankle
-            ax_j[2].plot(percent_axis, ankle_norm, color='darkorange', linewidth=2)
-            ax_j[2].set_title("Ankle Joint Angle", fontsize=14)
-            ax_j[2].set_ylabel("Sudut (Derajat)", fontsize=12)
-            ax_j[2].set_xlabel("% Gait Cycle", fontsize=12)
-            ax_j[2].grid(True)
-            
-            st.pyplot(fig_j)
-            
-            # Plot Akhir: Gait Phase Diagram
+            # Plot Akhir: Gait Phase Summary (Juga dirampingkan)
+            st.markdown("---")
             st.subheader("5. Gait Phase Summary")
-            fig_phase, ax_phase = plt.subplots(figsize=(10, 4))
+            fig_phase, ax_phase = plt.subplots(figsize=(12, 2.2))
             ax_phase.plot(percent_axis, heel_norm, label='Heel', color='blue')
             ax_phase.plot(percent_axis, toe_norm, label='Toe', color='red')
             ax_phase.axhline(thresh_heel_val, color='green', linestyle='--', linewidth=1)
-            ax_phase.set_title("Satu Siklus Penuh Gait Berjalan (0 - 100%)")
-            ax_phase.set_ylabel("Amplitudo Relatif")
+            ax_phase.set_ylabel("Amplitudo Relatif (V)")
             ax_phase.set_xlabel("% Gait Cycle")
             ax_phase.legend()
             ax_phase.grid(True)
-            st.pyplot(fig_phase)
+            st.pyplot(fig_phase, use_container_width=True)
             
         else:
-            st.warning("Data terlalu pendek untuk mendeteksi siklus berjalan (butuh minimal 2 ketukan tumit/Heel Strikes).")
+            st.warning("Data terlalu pendek untuk mendeteksi siklus berjalan.")
