@@ -1,197 +1,196 @@
 import streamlit as st
-import pandas as pd
 import math
-import matplotlib.pyplot as plt
 import io
+import matplotlib.pyplot as plt
+import pandas as pd  # Hanya digunakan di layer paling akhir untuk merender komponen UI tabel
 
-st.set_page_config(page_title="Biomechanics Analysis", layout="wide")
-
-# ==========================================
-# FUNGSI PEMROSESAN MANUAL (PURE PYTHON)
-# ==========================================
+# --- 1. FUNGSI LPF MANUAL (PURE PYTHON) ---
 @st.cache_data
-def manual_lowpass_filter(data, dt, cutoff, order=2):
-    if cutoff <= 0 or order < 1 or not data: return data
+def apply_manual_lpf(data, dt, cutoff, order):
+    if cutoff <= 0 or order < 1:
+        return data
+    
+    # Menghitung koefisien filter secara manual berdasarkan rumus cutoff adj
     fc_adj = cutoff / math.sqrt(2**(1.0 / order) - 1.0)
     tau = 1.0 / (2.0 * math.pi * fc_adj)
     alpha = dt / (tau + dt)
     
     y = list(data)
     for _ in range(order):
-        y_new = [y[0]]
+        y_new = []
+        prev_y = y[0]
+        y_new.append(prev_y)
         for i in range(1, len(y)):
-            y_new.append(alpha * y[i] + (1.0 - alpha) * y_new[-1])
+            curr_y = alpha * y[i] + (1.0 - alpha) * prev_y
+            y_new.append(curr_y)
+            prev_y = curr_y
         y = y_new
     return y
 
-def manual_normalize_max(data):
-    max_val = max([abs(x) for x in data])
-    if max_val == 0: return data
-    return [x / max_val for x in data]
+# --- 2. FUNGSI PARSING & RECTIFY MANUAL (TANPA READ_CSV) ---
+@st.cache_data
+def load_and_rectify_manual(file_bytes):
+    column_names = [
+        "time", "heel", "toe", "hip", "knee", "ankle", 
+        "gluteus maximus", "biceps femoris short", "biceps femoris long", 
+        "vastus medialis", "vastus lateralis", "rectus femoris", 
+        "soleus", "gastrocnemius", "tibialis anterior"
+    ]
+    
+    raw_text = file_bytes.decode('utf-8').splitlines()
+    parsed_data = {col: [] for col in column_names}
+    
+    for line in raw_text:
+        if not line.strip():
+            continue
+        parts = line.split()
+        if len(parts) == len(column_names):
+            try:
+                for idx, col in enumerate(column_names):
+                    parsed_data[col].append(float(parts[idx]))
+            except ValueError:
+                continue
+                
+    if len(parsed_data["time"]) > 1:
+        dt = parsed_data["time"][1] - parsed_data["time"][0]
+    else:
+        dt = 0.001
+    if dt <= 0:
+        dt = 0.001
+        
+    emg_columns = column_names[6:15]
+    
+    rect_dict = {}
+    for col in emg_columns:
+        rectified_list = []
+        for val in parsed_data[col]:
+            if val < 0:
+                rectified_list.append(-val)
+            else:
+                rectified_list.append(val)
+        rect_dict[col] = rectified_list
+        
+    return parsed_data, dt, emg_columns, rect_dict
 
-def detect_gait_cycles_manual(heel_norm, threshold, dt, cooldown=0.4):
-    hs_indices = []
-    for i in range(1, len(heel_norm)):
-        if heel_norm[i-1] < threshold and heel_norm[i] >= threshold:
-            if not hs_indices or (i - hs_indices[-1]) * dt > cooldown:
-                hs_indices.append(i)
-    return hs_indices
+# --- 3. KONFIGURASI HALAMAN ---
+st.set_page_config(page_title="Aplikasi Biomekanik & EMG", layout="wide")
+st.title("Aplikasi Pemrosesan Data Biomekanik")
 
-def manual_interpolate_100(vector):
-    N = len(vector)
-    if N < 2: return [0.0] * 100
-    out = []
-    for i in range(100):
-        frac_idx = (i / 99.0) * (N - 1)
-        idx_low = int(math.floor(frac_idx))
-        idx_high = int(math.ceil(frac_idx))
-        weight = frac_idx - idx_low
-        val = (1 - weight) * vector[idx_low] + weight * vector[idx_high]
-        out.append(val)
-    return out
-
-# ==========================================
-# UI APLIKASI & PEMBACAAN DATA CERDAS
-# ==========================================
-st.title("🏃‍♀️ Integrated Biomechanics Analysis App")
-
-uploaded_file = st.file_uploader("Upload File Data (.txt atau .csv)", type=["txt", "csv"])
+uploaded_file = st.file_uploader("Unggah file data (.txt)", type=["txt"])
 
 if uploaded_file is not None:
-    content = uploaded_file.getvalue().decode("utf-8")
+    file_bytes = uploaded_file.getvalue()
+    parsed_data, dt, emg_columns, rect_dict = load_and_rectify_manual(file_bytes)
     
-    # 1. CEK APAKAH FILE PUNYA JUDUL ATAU CUMA ANGKA
-    try:
-        # Coba baca 5 baris pertama tanpa menganggap ada judul
-        df_test = pd.read_csv(io.StringIO(content), sep=r'\s+', nrows=5, header=None)
-        first_row_val = str(df_test.iloc[0, 0])
+    # ---------------------------------------------------------
+    # OUTPUT 1: CUPLIKAN TABEL DATA MENTAH (DI LUAR TAB - PALING ATAS)
+    # ---------------------------------------------------------
+    st.markdown("---")
+    st.subheader("📋 Cuplikan Data Asli")
+    df_display = pd.DataFrame(parsed_data)
+    st.dataframe(df_display.head())
+    st.markdown("---")
+    
+    # =========================================================
+    # INSENTIF STRUKTUR TABS KEMBALI DI DEKLEASIKAN
+    # =========================================================
+    tab1, tab2 = st.tabs(["Grafik EMG & Aktivasi", "Gait Parameters & Kinematics"])
+    
+    with tab1:
+        st.header("Analisis Sinyal EMG & Aktivasi Otot")
         
-        # Kalau baris pertama isinya bisa diubah ke angka (float), berarti file gak punya header
-        is_no_header = False
-        try:
-            float(first_row_val)
-            is_no_header = True
-        except ValueError:
-            is_no_header = False
-
-        if is_no_header:
-            # Baca data sebagai kumpulan angka dan beri nama generik
-            df = pd.read_csv(io.StringIO(content), sep=r'\s+', header=None)
-            df.columns = [f"Kolom_{i}" for i in range(len(df.columns))]
-            st.warning("⚠️ File ini hanya berisi angka tanpa judul kolom. Gunakan pengaturan di bawah untuk memetakan kolomnya.")
-        else:
-            # File normal (ada judul/metadata)
-            lines = content.splitlines()
-            header_idx = 0
-            for i, line in enumerate(lines[:20]): 
-                if 'time' in line.lower() or 'waktu' in line.lower() or 'fsr' in line.lower():
-                    header_idx = i
-                    break
-            df = pd.read_csv(io.StringIO(content), sep=r'\s+', skiprows=header_idx)
-            if len(df.columns) < 3: 
-                df = pd.read_csv(io.StringIO(content), sep=',', skiprows=header_idx)
-                
-        st.success("Data berhasil dimuat!")
-        columns = list(df.columns)
-
-        # 2. PENGATURAN KOLOM MANUAL (Mencegah error salah deteksi kolom)
-        st.markdown("### ⚙️ Pengaturan Kolom Data")
-        st.write("Silakan pilih kolom mana yang sesuai dengan data berikut. (Biasanya Waktu di Kolom_0, FSR 1 di Kolom_1, dll).")
+        # PANEL KONTROL PARAMETER & SELEKSI OTOT (Masuk ke dalam Tab 1)
+        ctrl_col1, ctrl_col2, ctrl_col3 = st.columns(3)
+        with ctrl_col1:
+            cutoff_freq = st.slider("Cutoff Frequency LPF (Hz)", min_value=0.5, max_value=20.0, value=5.0, step=0.5)
+        with ctrl_col2:
+            filter_order = st.slider("Orde Filter LPF", min_value=1, max_value=5, value=2, step=1)
+        with ctrl_col3:
+            selected_muscle = st.selectbox("Pilih Otot untuk Visualisasi Detail:", emg_columns)
+            
+        st.markdown("---")
         
-        col_t, col_h, col_to = st.columns(3)
-        with col_t:
-            time_col = st.selectbox("Pilih Kolom Waktu (Time):", columns, index=0)
-        with col_h:
-            heel_col = st.selectbox("Pilih Kolom FSR Heel:", columns, index=1 if len(columns)>1 else 0)
-        with col_to:
-            toe_col = st.selectbox("Pilih Kolom FSR Toe:", columns, index=2 if len(columns)>2 else 0)
-            
-        st.divider()
-
-        tab1, tab2 = st.tabs(["📊 Tugas 1: Analisis EMG", "🚶‍♀️ Tugas 2: Ekstraksi Parameter Gait"])
+        # Downsampling data menggunakan slicing [::step] agar grafik anti-lag
+        step = 10
+        time_steps = parsed_data['time'][::step]
         
-        # ==========================================
-        # TAB 1: EMG
-        # ==========================================
-        with tab1:
-            st.header("Analisis Sinyal EMG")
-            t = df[time_col].tolist()
+        # Menyiapkan data spesifik otot yang dipilih user
+        raw_emg_selected = parsed_data[selected_muscle][::step]
+        rect_emg_selected = rect_dict[selected_muscle][::step]
+        
+        full_lpf = apply_manual_lpf(rect_dict[selected_muscle], dt, cutoff_freq, filter_order)
+        lpf_emg_selected = full_lpf[::step]
+        
+        # ---------------------------------------------------------
+        # OUTPUT 2: GRAFIK 1 - RAW EMG SIGNAL
+        # ---------------------------------------------------------
+        st.subheader(f"🔍 Analisis Sinyal Sektor Otot: {selected_muscle.title()}")
+        
+        fig1, ax1 = plt.subplots(figsize=(14, 3.5))
+        ax1.plot(time_steps, raw_emg_selected, color='#333333', linewidth=0.7)
+        ax1.set_title("RAW EMG SIGNAL", fontsize=11, fontweight='bold', color='#1f77b4', loc='center')
+        ax1.set_xlabel("time (sec)", fontsize=9)
+        ax1.set_ylabel("EMG (mv)", fontsize=9)
+        ax1.grid(True, linestyle='--', alpha=0.5)
+        ax1.set_xlim(time_steps[0], time_steps[-1])
+        st.pyplot(fig1)
+        
+        # ---------------------------------------------------------
+        # OUTPUT 3: GRAFIK 2 - PREPROCESSED EMG (RECTIFIED & LPF)
+        # ---------------------------------------------------------
+        fig2, ax2 = plt.subplots(figsize=(14, 3.5))
+        ax2.plot(time_steps, rect_emg_selected, color='black', linewidth=0.5, alpha=0.4, label='Rectified')
+        ax2.plot(time_steps, lpf_emg_selected, color='red', linewidth=1.5, label='Low-pass Filtered')
+        
+        ax2.set_title("PREPROCESSED EMG (RECTIFIED & LPF)", fontsize=11, fontweight='bold', color='#333333', loc='center')
+        ax2.set_xlabel("time (sec)", fontsize=9)
+        ax2.set_ylabel("Processed EMG (mv)", fontsize=9)
+        ax2.grid(True, linestyle='--', alpha=0.5)
+        ax2.legend(loc='upper right', fontsize=9)
+        ax2.set_xlim(time_steps[0], time_steps[-1])
+        st.pyplot(fig2)
+        
+        st.markdown("---")
+        
+        # ---------------------------------------------------------
+        # OUTPUT 4: GRAFIK 3 - THRESHOLDING PETA AKTIVASI 9 OTOT
+        # ---------------------------------------------------------
+        st.subheader("📊 Peta Aktivasi Semua Otot (Threshold 5% Max)")
+        
+        fig3, ax3 = plt.subplots(figsize=(14, 6))
+        
+        for idx, muscle in enumerate(emg_columns):
+            r_data = rect_dict[muscle]
+            l_data = apply_manual_lpf(r_data, dt, cutoff_freq, filter_order)
             
-            # Sisa kolom yang bukan waktu/heel/toe bisa dianggap sebagai otot (EMG)
-            used_cols = [time_col, heel_col, toe_col]
-            muscle_cols = [c for c in columns if c not in used_cols]
+            max_lpf = max(l_data)
+            auto_threshold = 0.05 * max_lpf
             
-            if muscle_cols:
-                selected_muscle = st.selectbox("Pilih Kolom Otot (EMG) untuk Dilihat:", muscle_cols)
-                raw_muscle = df[selected_muscle].tolist()
-                
-                fig_emg, ax_emg = plt.subplots(figsize=(10, 3))
-                ax_emg.plot(t, raw_muscle, color='#333333', linewidth=0.7)
-                ax_emg.set_title(f"RAW EMG: {selected_muscle}")
-                st.pyplot(fig_emg)
-            else:
-                st.info("Tidak ada sisa kolom untuk data EMG.")
+            l_data_sampled = l_data[::step]
+            
+            y_vals = []
+            for val in l_data_sampled:
+                if val >= auto_threshold:
+                    y_vals.append(idx)
+                else:
+                    y_vals.append(float('nan'))
+            
+            ax3.plot(time_steps, y_vals, linewidth=7.5, solid_capstyle='butt', color='#1f77b4')
+            
+        ax3.set_yticks(range(len(emg_columns)))
+        ax3.set_yticklabels([m.title() for m in emg_columns], fontsize=9)
+        ax3.set_xlabel("Time (seconds)", fontsize=10)
+        ax3.set_ylabel("Muscles", fontsize=10)
+        ax3.set_title("Muscle Activation Profile Each Cycle", fontsize=11, fontweight='bold')
+        ax3.grid(axis='x', linestyle='--', alpha=0.5)
+        ax3.set_ylim(-0.5, len(emg_columns) - 0.5)
+        ax3.set_xlim(time_steps[0], time_steps[-1])
+        
+        st.pyplot(fig3)
 
-        # ==========================================
-        # TAB 2: GAIT ANALYSIS
-        # ==========================================
-        with tab2:
-            st.header("Ekstraksi Parameter Gait (Manual Processing)")
-            
-            t = df[time_col].tolist()
-            raw_heel = df[heel_col].tolist()
-            raw_toe = df[toe_col].tolist()
-            
-            # Hitung dt (selisih waktu antar baris)
-            dt = t[1] - t[0] if len(t) > 1 else 0.01
-            if dt == 0: dt = 0.01 # Cegah error division by zero
-            
-            # --- STEP 1: RAW SIGNAL ---
-            st.subheader("1. Grafik Raw Input Signal")
-            fig1, ax1 = plt.subplots(figsize=(12, 3))
-            ax1.plot(t, raw_heel, label=f'Raw Heel ({heel_col})', color='blue', alpha=0.7)
-            ax1.plot(t, raw_toe, label=f'Raw Toe ({toe_col})', color='red', alpha=0.7)
-            ax1.set_xlabel('Time (s)')
-            ax1.legend()
-            st.pyplot(fig1)
-            
-            # --- STEP 2 & 3: FILTER & NORMALIZATION ---
-            st.subheader("2. Filter LPF & Normalisasi (Threshold 5%)")
-            filt_heel = manual_lowpass_filter(raw_heel, dt, cutoff=5.0, order=2)
-            filt_toe = manual_lowpass_filter(raw_toe, dt, cutoff=5.0, order=2)
-            
-            norm_heel = manual_normalize_max(filt_heel)
-            norm_toe = manual_normalize_max(filt_toe)
-            
-            threshold = 0.05
-            hs_indices = detect_gait_cycles_manual(norm_heel, threshold, dt)
-            
-            fig3, ax3 = plt.subplots(figsize=(12, 3))
-            ax3.plot(t, norm_heel, label='Normalized Heel', color='blue')
-            ax3.plot(t, norm_toe, label='Normalized Toe', color='red')
-            ax3.axhline(y=threshold, color='green', linestyle='--', label='5% Threshold')
-            
-            t_hs = [t[i] for i in hs_indices]
-            y_hs = [norm_heel[i] for i in hs_indices]
-            ax3.scatter(t_hs, y_hs, color='black', zorder=5, label='Heel Strike')
-            ax3.legend()
-            st.pyplot(fig3)
-            
-            # --- STEP 4: TEMPORAL PARAMETERS ---
-            st.subheader("3. Temporal Parameters")
-            num_cycles = len(hs_indices) - 1
-            if num_cycles > 0:
-                cycle_times = [(t[hs_indices[i+1]] - t[hs_indices[i]]) for i in range(num_cycles)]
-                avg_gait_cycle = sum(cycle_times) / len(cycle_times)
-                cadence = (60.0 / avg_gait_cycle) * 2
-                
-                temp_data = {
-                    "Parameter": ["Total Baris Data", "Gait Cycle Rata-Rata (s)", "Cadence (step/min)", "Jumlah Siklus"],
-                    "Nilai": [len(t), round(avg_gait_cycle, 3), round(cadence, 2), num_cycles]
-                }
-                st.table(pd.DataFrame(temp_data))
-            else:
-                st.warning("Siklus tidak cukup terdeteksi. Silakan periksa grafik apakah ada lonjakan sinyal yang jelas.")
-
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses data: {e}")
+    # =========================================================
+    # TAB 2: AMAN DAN KEMBALI BERDIRI KOKOH
+    # =========================================================
+    with tab2:
+        st.header("Ruang Kosong untuk Analisis Lanjut")
+        st.write("Tab ini disiapkan untuk pengerjaan data Sudut Sendi & Gait Phase (Menu 3 & 4) alias Tugas 2.")
