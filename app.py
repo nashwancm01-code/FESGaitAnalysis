@@ -9,7 +9,6 @@ st.set_page_config(page_title="Biomechanics Analysis", layout="wide")
 # ==========================================
 # FUNGSI PEMROSESAN MANUAL (PURE PYTHON)
 # ==========================================
-
 @st.cache_data
 def manual_lowpass_filter(data, dt, cutoff, order=2):
     if cutoff <= 0 or order < 1 or not data: return data
@@ -51,57 +50,79 @@ def manual_interpolate_100(vector):
         out.append(val)
     return out
 
-def find_column(columns, keywords):
-    for col in columns:
-        if any(kw.lower() in col.lower() for kw in keywords):
-            return col
-    return None
-
 # ==========================================
 # UI APLIKASI & PEMBACAAN DATA CERDAS
 # ==========================================
 st.title("🏃‍♀️ Integrated Biomechanics Analysis App")
-st.markdown("Membaca **satu file data flat** yang berisi gabungan EMG dan Gait Sensor.")
 
 uploaded_file = st.file_uploader("Upload File Data (.txt atau .csv)", type=["txt", "csv"])
 
 if uploaded_file is not None:
-    # 1. BACA FILE DENGAN CERDAS (Abaikan Metadata di atas)
     content = uploaded_file.getvalue().decode("utf-8")
-    lines = content.splitlines()
     
-    header_idx = 0
-    for i, line in enumerate(lines):
-        # Cari baris yang punya kata 'time' atau 'waktu' sebagai baris kolom sebenarnya
-        if 'time' in line.lower() or 'waktu' in line.lower():
-            header_idx = i
-            break
-            
-    # Gunakan separator whitespace dinamis (\s+) untuk membaca spasi/tab yang berantakan
-    df = pd.read_csv(io.StringIO(content), sep=r'\s+', skiprows=header_idx)
-    if len(df.columns) < 3: # Fallback kalau ternyata pakai koma
-        df = pd.read_csv(io.StringIO(content), sep=',', skiprows=header_idx)
+    # 1. CEK APAKAH FILE PUNYA JUDUL ATAU CUMA ANGKA
+    try:
+        # Coba baca 5 baris pertama tanpa menganggap ada judul
+        df_test = pd.read_csv(io.StringIO(content), sep=r'\s+', nrows=5, header=None)
+        first_row_val = str(df_test.iloc[0, 0])
         
-    st.success("Data berhasil dimuat dan dibaca kolomnya!")
-    columns = list(df.columns)
-    
-    tab1, tab2 = st.tabs(["📊 Tugas 1: Analisis EMG", "🚶‍♀️ Tugas 2: Ekstraksi Parameter Gait"])
-    
-    # ==========================================
-    # TAB 1: EMG
-    # ==========================================
-    with tab1:
-        st.header("Analisis Sinyal EMG")
-        time_col = find_column(columns, ['time', 'waktu', 'detik'])
-        if not time_col:
-            st.warning(f"Tidak menemukan kolom waktu. Kolom yang terbaca: {columns[:5]}...")
+        # Kalau baris pertama isinya bisa diubah ke angka (float), berarti file gak punya header
+        is_no_header = False
+        try:
+            float(first_row_val)
+            is_no_header = True
+        except ValueError:
+            is_no_header = False
+
+        if is_no_header:
+            # Baca data sebagai kumpulan angka dan beri nama generik
+            df = pd.read_csv(io.StringIO(content), sep=r'\s+', header=None)
+            df.columns = [f"Kolom_{i}" for i in range(len(df.columns))]
+            st.warning("⚠️ File ini hanya berisi angka tanpa judul kolom. Gunakan pengaturan di bawah untuk memetakan kolomnya.")
         else:
+            # File normal (ada judul/metadata)
+            lines = content.splitlines()
+            header_idx = 0
+            for i, line in enumerate(lines[:20]): 
+                if 'time' in line.lower() or 'waktu' in line.lower() or 'fsr' in line.lower():
+                    header_idx = i
+                    break
+            df = pd.read_csv(io.StringIO(content), sep=r'\s+', skiprows=header_idx)
+            if len(df.columns) < 3: 
+                df = pd.read_csv(io.StringIO(content), sep=',', skiprows=header_idx)
+                
+        st.success("Data berhasil dimuat!")
+        columns = list(df.columns)
+
+        # 2. PENGATURAN KOLOM MANUAL (Mencegah error salah deteksi kolom)
+        st.markdown("### ⚙️ Pengaturan Kolom Data")
+        st.write("Silakan pilih kolom mana yang sesuai dengan data berikut. (Biasanya Waktu di Kolom_0, FSR 1 di Kolom_1, dll).")
+        
+        col_t, col_h, col_to = st.columns(3)
+        with col_t:
+            time_col = st.selectbox("Pilih Kolom Waktu (Time):", columns, index=0)
+        with col_h:
+            heel_col = st.selectbox("Pilih Kolom FSR Heel:", columns, index=1 if len(columns)>1 else 0)
+        with col_to:
+            toe_col = st.selectbox("Pilih Kolom FSR Toe:", columns, index=2 if len(columns)>2 else 0)
+            
+        st.divider()
+
+        tab1, tab2 = st.tabs(["📊 Tugas 1: Analisis EMG", "🚶‍♀️ Tugas 2: Ekstraksi Parameter Gait"])
+        
+        # ==========================================
+        # TAB 1: EMG
+        # ==========================================
+        with tab1:
+            st.header("Analisis Sinyal EMG")
             t = df[time_col].tolist()
-            exclude_kws = ['time', 'waktu', 'detik', 'hip', 'knee', 'ankle', 'heel', 'toe', 'fsr']
-            muscle_cols = [c for c in columns if not any(kw in c.lower() for kw in exclude_kws)]
+            
+            # Sisa kolom yang bukan waktu/heel/toe bisa dianggap sebagai otot (EMG)
+            used_cols = [time_col, heel_col, toe_col]
+            muscle_cols = [c for c in columns if c not in used_cols]
             
             if muscle_cols:
-                selected_muscle = st.selectbox("Pilih Otot untuk Dilihat:", muscle_cols)
+                selected_muscle = st.selectbox("Pilih Kolom Otot (EMG) untuk Dilihat:", muscle_cols)
                 raw_muscle = df[selected_muscle].tolist()
                 
                 fig_emg, ax_emg = plt.subplots(figsize=(10, 3))
@@ -109,35 +130,27 @@ if uploaded_file is not None:
                 ax_emg.set_title(f"RAW EMG: {selected_muscle}")
                 st.pyplot(fig_emg)
             else:
-                st.info("Tidak ada kolom otot terdeteksi di file ini.")
+                st.info("Tidak ada sisa kolom untuk data EMG.")
 
-    # ==========================================
-    # TAB 2: GAIT ANALYSIS MANUAL (FLEXIBLE)
-    # ==========================================
-    with tab2:
-        st.header("Ekstraksi Parameter Gait (Manual Processing)")
-        
-        time_col = find_column(columns, ['time', 'waktu', 'detik'])
-        heel_col = find_column(columns, ['heel', 'fsr1'])
-        toe_col = find_column(columns, ['toe', 'fsr2'])
-        
-        # Cek ketersediaan parameter utama
-        if not time_col:
-            st.error("Kolom Time tidak terdeteksi.")
-        elif not heel_col or not toe_col:
-            st.error(f"Kolom Heel/Toe tidak lengkap. Kolom yang ada: {columns}")
-        else:
+        # ==========================================
+        # TAB 2: GAIT ANALYSIS
+        # ==========================================
+        with tab2:
+            st.header("Ekstraksi Parameter Gait (Manual Processing)")
+            
             t = df[time_col].tolist()
             raw_heel = df[heel_col].tolist()
             raw_toe = df[toe_col].tolist()
             
+            # Hitung dt (selisih waktu antar baris)
             dt = t[1] - t[0] if len(t) > 1 else 0.01
+            if dt == 0: dt = 0.01 # Cegah error division by zero
             
             # --- STEP 1: RAW SIGNAL ---
             st.subheader("1. Grafik Raw Input Signal")
             fig1, ax1 = plt.subplots(figsize=(12, 3))
-            ax1.plot(t, raw_heel, label='Raw Heel', color='blue', alpha=0.7)
-            ax1.plot(t, raw_toe, label='Raw Toe', color='red', alpha=0.7)
+            ax1.plot(t, raw_heel, label=f'Raw Heel ({heel_col})', color='blue', alpha=0.7)
+            ax1.plot(t, raw_toe, label=f'Raw Toe ({toe_col})', color='red', alpha=0.7)
             ax1.set_xlabel('Time (s)')
             ax1.legend()
             st.pyplot(fig1)
@@ -177,51 +190,8 @@ if uploaded_file is not None:
                     "Nilai": [len(t), round(avg_gait_cycle, 3), round(cadence, 2), num_cycles]
                 }
                 st.table(pd.DataFrame(temp_data))
-                
-                # --- STEP 5: JOINT ANGLE PARAMETERS (OPSIONAL) ---
-                hip_col = find_column(columns, ['hip'])
-                knee_col = find_column(columns, ['knee'])
-                ankle_col = find_column(columns, ['ankle'])
-                
-                if hip_col and knee_col and ankle_col:
-                    st.subheader("4. Joint Angle Parameters (0-100% Stride)")
-                    raw_hip = df[hip_col].tolist()
-                    raw_knee = df[knee_col].tolist()
-                    raw_ankle = df[ankle_col].tolist()
-                    
-                    hip_cycles, knee_cycles, ankle_cycles = [], [], []
-                    
-                    for i in range(num_cycles):
-                        start_idx = hs_indices[i]
-                        end_idx = hs_indices[i+1]
-                        
-                        hip_cycles.append(manual_interpolate_100(raw_hip[start_idx:end_idx]))
-                        knee_cycles.append(manual_interpolate_100(raw_knee[start_idx:end_idx]))
-                        ankle_cycles.append(manual_interpolate_100(raw_ankle[start_idx:end_idx]))
-                    
-                    avg_hip = [sum(col) / len(col) for col in zip(*hip_cycles)]
-                    avg_knee = [sum(col) / len(col) for col in zip(*knee_cycles)]
-                    avg_ankle = [sum(col) / len(col) for col in zip(*ankle_cycles)]
-                    
-                    x_percent = list(range(100))
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        fig_h, ax_h = plt.subplots(figsize=(5, 4))
-                        ax_h.plot(x_percent, avg_hip, color='blue', linewidth=2)
-                        ax_h.set_title("Hip Joint")
-                        st.pyplot(fig_h)
-                    with col2:
-                        fig_k, ax_k = plt.subplots(figsize=(5, 4))
-                        ax_k.plot(x_percent, avg_knee, color='green', linewidth=2)
-                        ax_k.set_title("Knee Joint")
-                        st.pyplot(fig_k)
-                    with col3:
-                        fig_a, ax_a = plt.subplots(figsize=(5, 4))
-                        ax_a.plot(x_percent, avg_ankle, color='red', linewidth=2)
-                        ax_a.set_title("Ankle Joint")
-                        st.pyplot(fig_a)
-                else:
-                    st.info("💡 Grafik sudut sendi (Kinematika) tidak ditampilkan karena kolom Hip/Knee/Ankle tidak ada di file ini.")
             else:
-                st.warning("Siklus tidak cukup terdeteksi.")
+                st.warning("Siklus tidak cukup terdeteksi. Silakan periksa grafik apakah ada lonjakan sinyal yang jelas.")
+
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat memproses data: {e}")
