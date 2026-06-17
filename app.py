@@ -155,10 +155,19 @@ muscle_names = ["Gluteus Maximus", "Biceps Femoris Short", "Biceps Femoris Long"
                 "Vastus Medialis", "Vastus Lateralis", "Rectus Femoris", 
                 "Medial Gastrocnemius", "Tibialis Anterior", "Soleus"]
 
-# Sidebar untuk Load Data
+# Sidebar untuk Load Data & Slider Filter
 with st.sidebar:
     st.header("Panel Kontrol")
     uploaded_file = st.file_uploader("LOAD DATA (TXT)", type=["txt"])
+    
+    # Menambahkan slider interaktif untuk mengatur Cutoff Frekuensi LPF secara global
+    cutoff_val = st.slider(
+        label="Cutoff Frequency LPF (Hz) EMG",
+        min_value=1.0,
+        max_value=20.0,
+        value=6.0,
+        step=0.1
+    )
 
 if uploaded_file is not None:
     data_dict, err = load_and_process_data(uploaded_file.getvalue())
@@ -173,9 +182,9 @@ if uploaded_file is not None:
         fs = data_dict['fs']
         n_samples = list(range(len(t)))
         
-        # --- Pre-processing Data (Sekali di awal untuk mempercepat UI) ---
-        heel_filt = apply_manual_lpf(data_dict['heel'], fs, cutoff=6, order=4)
-        toe_filt = apply_manual_lpf(data_dict['toe'], fs, cutoff=6, order=4)
+        # --- Pre-processing Data (Menggunakan variabel cutoff_val dari Slider) ---
+        heel_filt = apply_manual_lpf(data_dict['heel'], fs, cutoff=cutoff_val, order=4)
+        toe_filt = apply_manual_lpf(data_dict['toe'], fs, cutoff=cutoff_val, order=4)
         
         threshold_val = 0.15
         heel_cross = detect_crossing_time_manual(t, heel_filt, threshold_val)
@@ -216,11 +225,11 @@ if uploaded_file is not None:
             ax_in.legend(); ax_in.grid(True)
             st.pyplot(fig_in, use_container_width=True)
             
-            # 2. Plot Output (Filtered)
+            # 2. Plot Output (Filtered berdasarkan Slider)
             fig_out, ax_out = plt.subplots(figsize=(10, 2.5))
             ax_out.plot(n_samples, heel_filt, 'b-', label="Heel Filtering", linewidth=1)
             ax_out.plot(n_samples, toe_filt, 'r-', label="Toe Filtering", linewidth=1)
-            ax_out.set_title("OUTPUT / HASIL FILTERING")
+            ax_out.set_title(f"OUTPUT / HASIL FILTERING (Cutoff: {cutoff_val} Hz)")
             ax_out.set_xlabel("n (sample)"); ax_out.set_ylabel("Amplitude")
             ax_out.legend(); ax_out.grid(True)
             st.pyplot(fig_out, use_container_width=True)
@@ -257,7 +266,9 @@ if uploaded_file is not None:
             
             emg_raw = data_dict['emg']
             emg_rect = [[abs(val) for val in m_data] for m_data in emg_raw]
-            emg_env = [normalize_signal(apply_manual_lpf(m, fs, cutoff=6)) for m in emg_rect]
+            
+            # Menggunakan nilai cutoff_val dari slider untuk proses envelop filter sinyal EMG
+            emg_env = [normalize_signal(apply_manual_lpf(m, fs, cutoff=cutoff_val)) for m in emg_rect]
             
             # 1. Raw EMG (Tumpuk / Offset)
             fig_emg1, ax_emg1 = plt.subplots(figsize=(10, 5))
@@ -278,20 +289,19 @@ if uploaded_file is not None:
             fig_emg3, ax_emg3 = plt.subplots(figsize=(10, 5))
             for i in range(9):
                 ax_emg3.plot(t, [val + i * offset_env for val in emg_env[i]], 'g-', linewidth=1.5)
-            ax_emg3.set_title("Enveloped Filter")
+            ax_emg3.set_title(f"Enveloped Filter (Cutoff: {cutoff_val} Hz)")
             st.pyplot(fig_emg3, use_container_width=True)
             
             # 4. Muscle Activation Each Cycle (Gantt Chart)
             fig_act, ax_act = plt.subplots(figsize=(10, 5))
             for i in range(9):
                 segments = detect_activation_segments_manual(t, emg_env[i], 0.05)
-                # Format ke (start, duration) untuk broken_barh
                 bar_data = [(start, end - start) for start, end in segments]
                 y_pos = 8 - i
                 ax_act.broken_barh(bar_data, (y_pos - 0.25, 0.5), facecolors='#1f77b4')
                 
             ax_act.set_yticks(list(range(9)))
-            ax_act.set_yticklabels(muscle_names[::-1]) # Dibalik agar sesuai y_pos
+            ax_act.set_yticklabels(muscle_names[::-1])
             ax_act.set_title("Muscle activation each cycle")
             ax_act.grid(axis='x', linestyle=':')
             st.pyplot(fig_act, use_container_width=True)
@@ -308,10 +318,11 @@ if uploaded_file is not None:
             ax_pre_raw.set_ylabel("EMG (mv)"); ax_pre_raw.set_xlabel("time (sec)")
             st.pyplot(fig_pre_raw, use_container_width=True)
             
+            # Sinyal pembanding di bawah ini juga otomatis terupdate mengikuti slider
             fig_pre_res, ax_pre_res = plt.subplots(figsize=(10, 3))
             ax_pre_res.plot(t, emg_rect[0], color='gray', label="Rectified", alpha=0.5)
-            ax_pre_res.plot(t, apply_manual_lpf(emg_rect[0], fs, cutoff=6), color='red', label="Low-pass Filtered", linewidth=2)
-            ax_pre_res.set_title("PREPROCESSED EMG (RECTIFIED & LPF)")
+            ax_pre_res.plot(t, apply_manual_lpf(emg_rect[0], fs, cutoff=cutoff_val), color='red', label="Low-pass Filtered", linewidth=2)
+            ax_pre_res.set_title(f"PREPROCESSED EMG (RECTIFIED & LPF {cutoff_val} Hz)")
             ax_pre_res.set_ylabel("Processed EMG (mv)"); ax_pre_res.set_xlabel("time (sec)")
             ax_pre_res.legend()
             st.pyplot(fig_pre_res, use_container_width=True)
@@ -345,18 +356,15 @@ if uploaded_file is not None:
         # TAB 5: STFT ANALYSIS
         # ---------------------------------------------------------
         with tab5:
-            
             stft_opts = ["heel", "toe", "hip", "knee", "ankle"] + muscle_names
             sel_stft = st.selectbox("Pilih Sinyal untuk Spectrogram:", stft_opts)
             
-            # Map selected ke data
             if sel_stft in ["heel", "toe", "hip", "knee", "ankle"]:
                 sig_stft = data_dict[sel_stft]
             else:
                 idx = muscle_names.index(sel_stft)
                 sig_stft = emg_raw[idx]
             
-            # Generate STFT Manual. Pastikan nperseg adalah kelipatan 2 (misal 128)
             freqs, times_stft, power_matrix = compute_stft_manual(sig_stft, fs, nperseg=128)
             
             fig_stft, ax_stft = plt.subplots(figsize=(10, 4))
@@ -365,7 +373,7 @@ if uploaded_file is not None:
             ax_stft.set_title("STFT Spectrogram")
             ax_stft.set_ylabel("Frequency (Hz)")
             ax_stft.set_xlabel("Time (s)")
-            ax_stft.set_ylim(0, 11) # Sesuai dengan batasan plot yrange di PyQt
+            ax_stft.set_ylim(0, 11)
             st.pyplot(fig_stft, use_container_width=True)
 else:
     st.info("Silakan unggah file data .txt dari menu sebelah kiri untuk memulai analisis.")
