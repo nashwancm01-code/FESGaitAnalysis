@@ -26,7 +26,7 @@ def normalize_signal(signal):
 
 @st.cache_data
 def apply_manual_lpf(data, fs, cutoff=6, order=4):
-    """Low Pass Filter IIR manual menggantikan scipy.signal.butter."""
+    """Low Pass Filter IIR manual"""
     dt = 1.0 / fs
     if cutoff <= 0 or order < 1: return data
     fc_adj = cutoff / math.sqrt(2**(1.0 / order) - 1.0)
@@ -309,7 +309,7 @@ if uploaded_file is not None:
             for i, idx in enumerate(toe_fall):
                 ax_seg.axvline(x=t[idx], color='orange', linestyle=':', linewidth=1.2, label='Toe Off (Turun)' if i==0 else "")
 
-            ax_seg.set_title("HEEL dan TOE PHASE DETECTION (4 COLORS)")
+            ax_seg.set_title("HEEL dan TOE PHASE DETECTION")
             ax_seg.set_xlabel("Waktu (s)"); ax_seg.set_ylabel("Amplitudo")
             ax_seg.legend(loc='upper left', bbox_to_anchor=(1.0, 1.0))
             ax_seg.grid(True)
