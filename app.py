@@ -310,18 +310,24 @@ if uploaded_file is not None:
         # TAB 3: EMG PREPROCESSING
         # ---------------------------------------------------------
         with tab3:
-            st.markdown("Menampilkan komparasi untuk otot **Gluteus Maximus** (Kolom Pertama)")
+            # TAMBAHAN: Membuat dropdown pilihan otot
+            otot_pilihan = st.selectbox("Pilih Otot untuk dianalisis pada proses Preprocessing:", muscle_names)
+            
+            # Mencari indeks dari otot yang dipilih
+            idx_otot = muscle_names.index(otot_pilihan)
+            
+            st.markdown(f"Menampilkan komparasi untuk otot **{otot_pilihan}**")
             
             fig_pre_raw, ax_pre_raw = plt.subplots(figsize=(10, 3))
-            ax_pre_raw.plot(t, emg_raw[0], 'k-', linewidth=1)
+            ax_pre_raw.plot(t, emg_raw[idx_otot], 'k-', linewidth=1)
             ax_pre_raw.set_title("RAW EMG SIGNAL")
             ax_pre_raw.set_ylabel("EMG (mv)"); ax_pre_raw.set_xlabel("time (sec)")
             st.pyplot(fig_pre_raw, use_container_width=True)
             
-            # Sinyal pembanding di bawah ini juga otomatis terupdate mengikuti slider
+            # Sinyal pembanding di bawah ini juga otomatis terupdate mengikuti slider dan otot yang dipilih
             fig_pre_res, ax_pre_res = plt.subplots(figsize=(10, 3))
-            ax_pre_res.plot(t, emg_rect[0], color='gray', label="Rectified", alpha=0.5)
-            ax_pre_res.plot(t, apply_manual_lpf(emg_rect[0], fs, cutoff=cutoff_val), color='red', label="Low-pass Filtered", linewidth=2)
+            ax_pre_res.plot(t, emg_rect[idx_otot], color='gray', label="Rectified", alpha=0.5)
+            ax_pre_res.plot(t, apply_manual_lpf(emg_rect[idx_otot], fs, cutoff=cutoff_val), color='red', label="Low-pass Filtered", linewidth=2)
             ax_pre_res.set_title(f"PREPROCESSED EMG (RECTIFIED & LPF {cutoff_val} Hz)")
             ax_pre_res.set_ylabel("Processed EMG (mv)"); ax_pre_res.set_xlabel("time (sec)")
             ax_pre_res.legend()
