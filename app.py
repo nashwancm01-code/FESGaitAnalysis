@@ -23,7 +23,7 @@ def normalize_signal(signal):
 
 @st.cache_data
 def apply_manual_lpf(data, fs, cutoff=6, order=4):
-    """Low Pass Filter IIR manual menggantikan scipy.signal.butter."""
+    """Low Pass Filter IIR."""
     dt = 1.0 / fs
     if cutoff <= 0 or order < 1: return data
     fc_adj = cutoff / math.sqrt(2**(1.0 / order) - 1.0)
@@ -82,7 +82,7 @@ def radix2_fft(x):
 
 @st.cache_data
 def compute_stft_manual(signal, fs, nperseg=128):
-    """STFT (Short-Time Fourier Transform) manual menggantikan scipy stft."""
+    """STFT (Short-Time Fourier Transform) manual."""
     step = nperseg // 2
     power_matrix = []
     time_bins = []
