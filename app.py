@@ -5,9 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# ==========================================
 # --- 1. FUNGSI MATEMATIKA & DSP MANUAL ---
-# ==========================================
 
 def get_mean(data):
     if not data: return 0
@@ -97,9 +95,7 @@ def compute_stft_manual(signal, fs, nperseg=128):
     transposed_power = [[power_matrix[col][row] for col in range(len(power_matrix))] for row in range(len(power_matrix[0]))]
     return freq_bins, time_bins, transposed_power
 
-# ==========================================
 # --- 2. PARSER DATA ---
-# ==========================================
 
 @st.cache_data
 def load_and_process_data(file_bytes):
@@ -133,9 +129,7 @@ def load_and_process_data(file_bytes):
         "knee": np.array(knee), "ankle": np.array(ankle), "emg": emg, "fs": fs
     }, None
 
-# ==========================================
 # --- 3. UI APLIKASI STREAMLIT ---
-# ==========================================
 
 st.set_page_config(page_title="FP PSB - Gait & STFT", layout="wide")
 st.title("Gait Parameter Extraction & STFT Analysis")
@@ -272,9 +266,7 @@ if uploaded_file is not None:
             "PARAMETER (TABEL)", "STFT ANALYSIS"
         ])
         
-        # ---------------------------------------------------------
         # TAB 1: GAIT PARAMETERS
-        # ---------------------------------------------------------
         with tab1:
             # 1. Plot Input (Sumbu X pakai Waktu)
             fig_in, ax_in = plt.subplots(figsize=(10, 2.5))
@@ -325,9 +317,7 @@ if uploaded_file is not None:
             ax_joint.legend(); ax_joint.grid(True)
             st.pyplot(fig_joint, use_container_width=True)
 
-        # ---------------------------------------------------------
         # TAB 2: DYNAMIC EMG
-        # ---------------------------------------------------------
         with tab2:
             offset_raw = 2.0
             offset_env = 1.2
@@ -372,9 +362,7 @@ if uploaded_file is not None:
             ax_act.grid(axis='x', linestyle=':')
             st.pyplot(fig_act, use_container_width=True)
 
-        # ---------------------------------------------------------
         # TAB 3: EMG PREPROCESSING
-        # ---------------------------------------------------------
         with tab3:
             otot_pilihan = st.selectbox("Pilih Otot untuk dianalisis pada proses Preprocessing:", muscle_names)
             idx_otot = muscle_names.index(otot_pilihan)
@@ -395,9 +383,7 @@ if uploaded_file is not None:
             ax_pre_res.legend()
             st.pyplot(fig_pre_res, use_container_width=True)
 
-        # ---------------------------------------------------------
         # TAB 4: PARAMETER (TABEL)
-        # ---------------------------------------------------------
         with tab4:
             st.subheader("Temporal Parameters (Detailed per Cycle)")
             # Menampilkan tabel baru yang ada rata-ratanya
@@ -417,9 +403,7 @@ if uploaded_file is not None:
                 "Nilai": [f"{max_v:.2f}", f"{min_v:.2f}", f"{rom_v:.2f}"]
             })
 
-        # ---------------------------------------------------------
         # TAB 5: STFT ANALYSIS
-        # ---------------------------------------------------------
         with tab5:
             stft_opts = ["heel", "toe", "hip", "knee", "ankle"] + muscle_names
             sel_stft = st.selectbox("Pilih Sinyal untuk Spectrogram:", stft_opts)
