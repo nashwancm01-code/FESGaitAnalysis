@@ -2,10 +2,8 @@ import streamlit as st
 import math
 import cmath # Untuk operasi bilangan kompleks pada FFT manual
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 
-# --- 1. FUNGSI MATEMATIKA & DSP MANUAL ---
+# --- 1. FUNGSI MATEMATIKA & DSP MANUAL (0% NUMPY/PANDAS) ---
 
 def get_mean(data):
     if not data: return 0
@@ -15,16 +13,17 @@ def get_diff(data):
     return [data[i] - data[i-1] for i in range(1, len(data))]
 
 def normalize_signal(signal):
-    signal = np.asarray(signal)
-    min_val = np.min(signal)
-    max_val = np.max(signal)
+    """Normalisasi sinyal menggunakan fungsi min/max bawaan Python"""
+    if not signal: return []
+    min_val = min(signal)
+    max_val = max(signal)
     if max_val - min_val == 0:
-        return np.zeros_like(signal)
-    return (signal - min_val) / (max_val - min_val)
+        return [0.0] * len(signal)
+    return [(val - min_val) / (max_val - min_val) for val in signal]
 
 @st.cache_data
 def apply_manual_lpf(data, fs, cutoff=6, order=4):
-    """Low Pass Filter IIR manual"""
+    """Low Pass Filter IIR manual menggunakan List Python"""
     dt = 1.0 / fs
     if cutoff <= 0 or order < 1: return data
     fc_adj = cutoff / math.sqrt(2**(1.0 / order) - 1.0)
@@ -38,7 +37,7 @@ def apply_manual_lpf(data, fs, cutoff=6, order=4):
             curr_y = alpha * y[i] + (1.0 - alpha) * y_new[-1]
             y_new.append(curr_y)
         y = y_new
-    return np.array(y) # Return sebagai numpy array agar mudah diolah
+    return y
 
 def detect_activation_segments_manual(time, signal, threshold):
     """Mendeteksi segmen mulai dan akhir saat sinyal melebihi threshold."""
@@ -69,7 +68,7 @@ def radix2_fft(x):
 
 @st.cache_data
 def compute_stft_manual(signal, fs, nperseg=128):
-    """STFT (Short-Time Fourier Transform) manual menggantikan scipy stft."""
+    """STFT manual tanpa scipy murni menggunakan list comprehension."""
     step = nperseg // 2
     power_matrix = []
     time_bins = []
@@ -110,7 +109,7 @@ def load_and_process_data(file_bytes):
         
     if not data: return None, "Data tidak valid."
     
-    # Ekstrak per kolom
+    # Ekstrak per kolom (Murni List)
     t = [row[0] for row in data]
     heel = [row[1] for row in data]
     toe = [row[2] for row in data]
@@ -125,14 +124,14 @@ def load_and_process_data(file_bytes):
     fs = 1.0 / get_mean(diff_t) if diff_t else 1000.0
     
     return {
-        "t": np.array(t), "heel": np.array(heel), "toe": np.array(toe), "hip": np.array(hip), 
-        "knee": np.array(knee), "ankle": np.array(ankle), "emg": emg, "fs": fs
+        "t": t, "heel": heel, "toe": toe, "hip": hip, 
+        "knee": knee, "ankle": ankle, "emg": emg, "fs": fs
     }, None
 
 # --- 3. UI APLIKASI STREAMLIT ---
 
 st.set_page_config(page_title="FP PSB - Gait & STFT", layout="wide")
-st.title("Gait Parameter Extraction & STFT Analysis")
+st.title("Gait Parameter Extraction & STFT Analysis (Pure Python DSP)")
 
 muscle_names = ["Gluteus Maximus", "Biceps Femoris Short", "Biceps Femoris Long", 
                 "Vastus Medialis", "Vastus Lateralis", "Rectus Femoris", 
@@ -170,13 +169,23 @@ if uploaded_file is not None:
         heel_norm = normalize_signal(heel_filt)
         toe_norm = normalize_signal(toe_filt)
         
-        # --- Deteksi Fase 4 Titik (Menggunakan np.where) ---
+        # --- Deteksi Fase 4 Titik (Murni Algoritma Loop Tanpa np.where) ---
         threshold_val = 0.05
         
-        heel_rise = np.where((heel_norm[:-1] < threshold_val) & (heel_norm[1:] >= threshold_val))[0] + 1
-        heel_fall = np.where((heel_norm[:-1] >= threshold_val) & (heel_norm[1:] < threshold_val))[0] + 1
-        toe_rise = np.where((toe_norm[:-1] < threshold_val) & (toe_norm[1:] >= threshold_val))[0] + 1
-        toe_fall = np.where((toe_norm[:-1] >= threshold_val) & (toe_norm[1:] < threshold_val))[0] + 1
+        heel_rise = []
+        heel_fall = []
+        toe_rise = []
+        toe_fall = []
+        
+        for i in range(len(heel_norm) - 1):
+            if heel_norm[i] < threshold_val and heel_norm[i+1] >= threshold_val:
+                heel_rise.append(i + 1)
+            if heel_norm[i] >= threshold_val and heel_norm[i+1] < threshold_val:
+                heel_fall.append(i + 1)
+            if toe_norm[i] < threshold_val and toe_norm[i+1] >= threshold_val:
+                toe_rise.append(i + 1)
+            if toe_norm[i] >= threshold_val and toe_norm[i+1] < threshold_val:
+                toe_fall.append(i + 1)
         
         # --- Perhitungan Parameter Temporal ---
         gait_cycles = []
@@ -205,7 +214,8 @@ if uploaded_file is not None:
             end_time = cycle["end_time"]
             gait_cycle_time = cycle["duration"]
 
-            toe_fall_in_cycle = toe_fall[(toe_fall > start_idx) & (toe_fall < end_idx)]
+            # Filter indeks toe_fall yang masuk dalam cycle ini secara manual
+            toe_fall_in_cycle = [idx for idx in toe_fall if start_idx < idx < end_idx]
             if len(toe_fall_in_cycle) == 0:
                 continue
 
@@ -228,28 +238,39 @@ if uploaded_file is not None:
                 "stance_percent": round(stance_percent, 2),
                 "swing_percent": round(swing_percent, 2)
             })
-
-        df_temporal = pd.DataFrame(temporal_parameters)
         
-        if not df_temporal.empty:
-            avg_vals = df_temporal.mean(numeric_only=True)
+        # --- Perhitungan Rata-rata Manual (Substitusi Pandas) ---
+        if temporal_parameters:
+            num_cycles = len(temporal_parameters)
+            avg_start = sum(p["start_time"] for p in temporal_parameters) / num_cycles
+            avg_toe_off = sum(p["toe_off_time"] for p in temporal_parameters) / num_cycles
+            avg_end = sum(p["end_time"] for p in temporal_parameters) / num_cycles
+            avg_gait = sum(p["gait_cycle_time"] for p in temporal_parameters) / num_cycles
+            avg_stance = sum(p["stance_time"] for p in temporal_parameters) / num_cycles
+            avg_swing = sum(p["swing_time"] for p in temporal_parameters) / num_cycles
+            avg_stance_pct = sum(p["stance_percent"] for p in temporal_parameters) / num_cycles
+            avg_swing_pct = sum(p["swing_percent"] for p in temporal_parameters) / num_cycles
+
             avg_row = {
                 "cycle": "Rata-rata",
-                "start_time": round(avg_vals["start_time"], 3),
-                "toe_off_time": round(avg_vals["toe_off_time"], 3),
-                "end_time": round(avg_vals["end_time"], 3),
-                "gait_cycle_time": round(avg_vals["gait_cycle_time"], 3),
-                "stance_time": round(avg_vals["stance_time"], 3),
-                "swing_time": round(avg_vals["swing_time"], 3),
-                "stance_percent": round(avg_vals["stance_percent"], 2),
-                "swing_percent": round(avg_vals["swing_percent"], 2)
+                "start_time": round(avg_start, 3),
+                "toe_off_time": round(avg_toe_off, 3),
+                "end_time": round(avg_end, 3),
+                "gait_cycle_time": round(avg_gait, 3),
+                "stance_time": round(avg_stance, 3),
+                "swing_time": round(avg_swing, 3),
+                "stance_percent": round(avg_stance_pct, 2),
+                "swing_percent": round(avg_swing_pct, 2)
             }
-            df_display = pd.concat([df_temporal, pd.DataFrame([avg_row])], ignore_index=True)
             
-            mean_cycle = avg_vals['gait_cycle_time']
+            # Duplikasi list asli lalu tempel baris rata-rata di bawahnya
+            df_display = list(temporal_parameters)
+            df_display.append(avg_row)
+            
+            mean_cycle = avg_gait
             cadence = (60.0 / mean_cycle) if mean_cycle > 0 else 0.0
         else:
-            df_display = pd.DataFrame()
+            df_display = []
             mean_cycle = 0
             cadence = 0
             
@@ -268,7 +289,6 @@ if uploaded_file is not None:
         
         # TAB 1: GAIT PARAMETERS
         with tab1:
-            # 1. Plot Input (Sumbu X pakai Waktu)
             fig_in, ax_in = plt.subplots(figsize=(10, 2.5))
             ax_in.plot(t, data_dict['heel'], 'b-', label="Heel / FSR Biru", linewidth=1)
             ax_in.plot(t, data_dict['toe'], 'r-', label="Toe / FSR Merah", linewidth=1)
@@ -277,7 +297,6 @@ if uploaded_file is not None:
             ax_in.legend(); ax_in.grid(True)
             st.pyplot(fig_in, use_container_width=True)
             
-            # 2. Plot Output Filter (Sumbu X pakai Waktu)
             fig_out, ax_out = plt.subplots(figsize=(10, 2.5))
             ax_out.plot(t, heel_filt, 'b-', label="Heel Filtering", linewidth=1)
             ax_out.plot(t, toe_filt, 'r-', label="Toe Filtering", linewidth=1)
@@ -286,7 +305,6 @@ if uploaded_file is not None:
             ax_out.legend(); ax_out.grid(True)
             st.pyplot(fig_out, use_container_width=True)
             
-            # 3. Plot Segmentasi (4 WARNA FASE BERBEDA)
             fig_seg, ax_seg = plt.subplots(figsize=(10, 3.5))
             ax_seg.plot(t, heel_norm, 'purple', label="Heel Normalized", linewidth=1.5)
             ax_seg.plot(t, toe_norm, 'blue', label="Toe Normalized", linewidth=1.5)
@@ -307,7 +325,6 @@ if uploaded_file is not None:
             ax_seg.grid(True)
             st.pyplot(fig_seg, use_container_width=True)
             
-            # 4. Plot Joint Angles (Sumbu X pakai Waktu)
             fig_joint, ax_joint = plt.subplots(figsize=(10, 2.5))
             ax_joint.plot(t, data_dict['hip'], 'r-', label="Hip", linewidth=1)
             ax_joint.plot(t, data_dict['knee'], 'g-', label="Knee", linewidth=1)
@@ -386,12 +403,11 @@ if uploaded_file is not None:
         # TAB 4: PARAMETER (TABEL)
         with tab4:
             st.subheader("Temporal Parameters (Detailed per Cycle)")
-            # Menampilkan tabel baru yang ada rata-ratanya
+            # Menerima list of dicts secara langsung, tampilannya sama persis seperti DataFrame pandas
             st.dataframe(df_display, use_container_width=True)
             
             st.markdown("---")
             
-            # Tetap mempertahankan tabel Joint Angle aslinya
             st.subheader("Joint Angle Parameters")
             joint_sel = st.selectbox("Pilih Joint:", ["hip", "knee", "ankle"])
             sig_j = data_dict[joint_sel]
@@ -417,6 +433,7 @@ if uploaded_file is not None:
             freqs, times_stft, power_matrix = compute_stft_manual(sig_stft, fs, nperseg=128)
             
             fig_stft, ax_stft = plt.subplots(figsize=(10, 4))
+            # pcolormesh bawaan matplotlib sanggup membaca list multi-dimensi tanpa numpy array
             c = ax_stft.pcolormesh(times_stft, freqs, power_matrix, shading='gouraud', cmap='viridis')
             fig_stft.colorbar(c, ax=ax_stft, label="Power")
             ax_stft.set_title("STFT Spectrogram")
