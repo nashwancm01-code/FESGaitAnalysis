@@ -131,7 +131,7 @@ def load_and_process_data(file_bytes):
 # --- 3. UI APLIKASI STREAMLIT ---
 
 st.set_page_config(page_title="FP PSB - Gait & STFT", layout="wide")
-st.title("Gait Parameter Extraction & STFT Analysis (Pure Python DSP)")
+st.title("Gait Parameter Extraction & STFT Analysis")
 
 muscle_names = ["Gluteus Maximus", "Biceps Femoris Short", "Biceps Femoris Long", 
                 "Vastus Medialis", "Vastus Lateralis", "Rectus Femoris", 
