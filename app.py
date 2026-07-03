@@ -56,6 +56,25 @@ def detect_activation_segments_manual(time, signal, threshold):
         segments.append((start, time[-1]))
     return segments
 
+# --- TAMBAHAN: INTERPOLASI LINEAR MANUAL UNTUK SIKLUS 0-100% ---
+def manual_interpolate(source_list, target_len=100):
+    """Mengubah panjang array secara manual ke target_len (0-100%) menggunakan interpolasi linear"""
+    N = len(source_list)
+    if N < 2:
+        return [source_list[0] if source_list else 0.0] * target_len
+    interpolated = []
+    for i in range(target_len):
+        pos = (i / (target_len - 1)) * (N - 1)
+        idx_low = math.floor(pos)
+        idx_high = math.ceil(pos)
+        weight = pos - idx_low
+        if idx_low == idx_high:
+            val = source_list[idx_low]
+        else:
+            val = (1.0 - weight) * source_list[idx_low] + weight * source_list[idx_high]
+        interpolated.append(val)
+    return interpolated
+
 # --- FFT MANUAL UNTUK STFT ---
 def radix2_fft(x):
     """Algoritma Fast Fourier Transform murni Python."""
@@ -290,10 +309,10 @@ if uploaded_file is not None:
         - Jumlah Cycle: {len(gait_cycles)}
         """)
 
-        # TABS SESUAI PYQT
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        # --- REVISI: MENAMBAHKAN TAB KE-6 KHUSUS GRAFIK GABUNGAN NORMALISASI ---
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "GAIT PARAMETERS", "DYNAMIC EMG", "EMG PREPROCESSING", 
-            "PARAMETER (TABEL)", "STFT ANALYSIS"
+            "PARAMETER (TABEL)", "STFT ANALYSIS", "NORMALIZED SIKLUS (0-100%)"
         ])
         
         # TAB 1: GAIT PARAMETERS
@@ -421,7 +440,6 @@ if uploaded_file is not None:
         # TAB 4: PARAMETER (TABEL)
         with tab4:
             st.subheader("Temporal Parameters (Detailed per Cycle)")
-            # Menerima list of dicts secara langsung, tampilannya sama persis seperti DataFrame pandas
             st.dataframe(df_display, use_container_width=True)
             
             st.markdown("---")
@@ -451,7 +469,6 @@ if uploaded_file is not None:
             freqs, times_stft, power_matrix = compute_stft_manual(sig_stft, fs, nperseg=128)
             
             fig_stft, ax_stft = plt.subplots(figsize=(10, 4))
-            # pcolormesh bawaan matplotlib sanggup membaca list multi-dimensi tanpa numpy array
             c = ax_stft.pcolormesh(times_stft, freqs, power_matrix, shading='gouraud', cmap='viridis')
             fig_stft.colorbar(c, ax=ax_stft, label="Power")
             ax_stft.set_title("STFT Spectrogram")
@@ -459,5 +476,72 @@ if uploaded_file is not None:
             ax_stft.set_xlabel("Waktu (s)")
             ax_stft.set_ylim(0, 11)
             st.pyplot(fig_stft, use_container_width=True)
+
+        # --- TAB 6: HASIL GABUNGAN NORMALISASI KINEMATIK (0-100%) ---
+        with tab6:
+            st.subheader("Grafik Kinematik Gabungan per Segmen Siklus (0-100% Gait Cycle)")
+            if len(gait_cycles) > 0:
+                all_hip_norm = []
+                all_knee_norm = []
+                all_ankle_norm = []
+                
+                # Ekstrak, potong, dan melarkan setiap siklus ke 100 titik menggunakan interpolasi manual
+                for cycle in gait_cycles:
+                    s_idx = cycle["start_idx"]
+                    e_idx = cycle["end_idx"]
+                    
+                    hip_seg = data_dict['hip'][s_idx:e_idx+1]
+                    knee_seg = data_dict['knee'][s_idx:e_idx+1]
+                    ankle_seg = data_dict['ankle'][s_idx:e_idx+1]
+                    
+                    all_hip_norm.append(manual_interpolate(hip_seg, 100))
+                    all_knee_norm.append(manual_interpolate(knee_seg, 100))
+                    all_ankle_norm.append(manual_interpolate(ankle_seg, 100))
+                
+                # Hitung kurva rata-rata (mean curve) secara manual per titik persentase
+                avg_hip = []
+                avg_knee = []
+                avg_ankle = []
+                for p_idx in range(100):
+                    avg_hip.append(sum(all_hip_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
+                    avg_knee.append(sum(all_knee_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
+                    avg_ankle.append(sum(all_ankle_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
+                
+                # Gambar 3 Subplot Berdampingan (Hip, Knee, Ankle) agar elegan
+                fig_norm_cycles, axs = plt.subplots(1, 3, figsize=(15, 4.5))
+                x_percent = list(range(100))
+                
+                # 1. Plot Hip Joint
+                for cycle_data in all_hip_norm:
+                    axs[0].plot(x_percent, cycle_data, color='lightcoral', alpha=0.4, linewidth=0.8)
+                axs[0].plot(x_percent, avg_hip, color='red', linewidth=2.5, label='Mean Hip')
+                axs[0].set_title("Hip Joint Angle", fontsize=10, fontweight='bold')
+                axs[0].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[0].set_ylabel("Degree (°)", fontsize=8)
+                axs[0].grid(True, linestyle=':')
+                axs[0].legend(fontsize=8)
+                
+                # 2. Plot Knee Joint
+                for cycle_data in all_knee_norm:
+                    axs[1].plot(x_percent, cycle_data, color='lightgreen', alpha=0.4, linewidth=0.8)
+                axs[1].plot(x_percent, avg_knee, color='green', linewidth=2.5, label='Mean Knee')
+                axs[1].set_title("Knee Joint Angle", fontsize=10, fontweight='bold')
+                axs[1].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[1].grid(True, linestyle=':')
+                axs[1].legend(fontsize=8)
+                
+                # 3. Plot Ankle Joint
+                for cycle_data in all_ankle_norm:
+                    axs[2].plot(x_percent, cycle_data, color='lightblue', alpha=0.4, linewidth=0.8)
+                axs[2].plot(x_percent, avg_ankle, color='blue', linewidth=2.5, label='Mean Ankle')
+                axs[2].set_title("Ankle Joint Angle", fontsize=10, fontweight='bold')
+                axs[2].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[2].grid(True, linestyle=':')
+                axs[2].legend(fontsize=8)
+                
+                st.pyplot(fig_norm_cycles, use_container_width=True)
+            else:
+                st.warning("Belum ada siklus kaki yang terdeteksi untuk dianalisis.")
 else:
     st.info("Silakan unggah file data .txt dari menu sebelah kiri untuk memulai analisis.")
+     
