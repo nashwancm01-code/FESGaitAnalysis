@@ -544,4 +544,3 @@ if uploaded_file is not None:
                 st.warning("Belum ada siklus kaki yang terdeteksi untuk dianalisis.")
 else:
     st.info("Silakan unggah file data .txt dari menu sebelah kiri untuk memulai analisis.")
-     
