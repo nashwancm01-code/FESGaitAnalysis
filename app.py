@@ -149,6 +149,15 @@ with st.sidebar:
         value=6.0,
         step=0.1
     )
+    
+    # --- REVISI 3: SLIDER THRESHOLD EMG ---
+    thresh_emg = st.slider(
+        label="Threshold EMG Activation",
+        min_value=0.01,
+        max_value=0.50,
+        value=0.15,
+        step=0.01
+    )
 
 if uploaded_file is not None:
     data_dict, err = load_and_process_data(uploaded_file.getvalue())
@@ -334,6 +343,42 @@ if uploaded_file is not None:
             ax_joint.legend(); ax_joint.grid(True)
             st.pyplot(fig_joint, use_container_width=True)
 
+            # --- REVISI 1: GRAFIK PER SIKLUS (SEGMEN) ---
+            st.markdown("---")
+            st.subheader("Analisis Per Segmen (Satu Siklus Berjalan)")
+            if len(gait_cycles) > 0:
+                cycle_opts = [f"Siklus {c['cycle']}" for c in gait_cycles]
+                pilihan_siklus = st.selectbox("Pilih Siklus yang ingin dilihat:", cycle_opts)
+                
+                idx_siklus = cycle_opts.index(pilihan_siklus)
+                s_idx = gait_cycles[idx_siklus]["start_idx"]
+                e_idx = gait_cycles[idx_siklus]["end_idx"]
+                
+                t_seg = t[s_idx:e_idx]
+                heel_seg = data_dict['heel'][s_idx:e_idx]
+                toe_seg = data_dict['toe'][s_idx:e_idx]
+                hip_seg = data_dict['hip'][s_idx:e_idx]
+                knee_seg = data_dict['knee'][s_idx:e_idx]
+                ankle_seg = data_dict['ankle'][s_idx:e_idx]
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    fig_seg_fsr, ax_seg_fsr = plt.subplots(figsize=(5, 3))
+                    ax_seg_fsr.plot(t_seg, heel_seg, 'b-', label="Heel")
+                    ax_seg_fsr.plot(t_seg, toe_seg, 'r-', label="Toe")
+                    ax_seg_fsr.set_title(f"FSR pada {pilihan_siklus}")
+                    ax_seg_fsr.legend(); ax_seg_fsr.grid(True)
+                    st.pyplot(fig_seg_fsr, use_container_width=True)
+                    
+                with col_b:
+                    fig_seg_kin, ax_seg_kin = plt.subplots(figsize=(5, 3))
+                    ax_seg_kin.plot(t_seg, hip_seg, 'r-', label="Hip")
+                    ax_seg_kin.plot(t_seg, knee_seg, 'g-', label="Knee")
+                    ax_seg_kin.plot(t_seg, ankle_seg, 'b-', label="Ankle")
+                    ax_seg_kin.set_title(f"Kinematik pada {pilihan_siklus}")
+                    ax_seg_kin.legend(); ax_seg_kin.grid(True)
+                    st.pyplot(fig_seg_kin, use_container_width=True)
+
         # TAB 2: DYNAMIC EMG
         with tab2:
             offset_raw = 2.0
@@ -361,13 +406,22 @@ if uploaded_file is not None:
             fig_emg3, ax_emg3 = plt.subplots(figsize=(10, 5))
             for i in range(9):
                 ax_emg3.plot(t, [val + i * offset_env for val in emg_env[i]], 'g-', linewidth=1.5)
-            ax_emg3.set_title(f"Enveloped Filter (Cutoff: {cutoff_val} Hz)")
+            
+            # --- REVISI 2: GARIS ON/OFF DI GRAFIK EMG ---
+            for p in temporal_parameters:
+                # Garis Hijau = Kaki ON (Heel Strike / Stance)
+                ax_emg3.axvline(x=p["start_time"], color='lime', linestyle='--', linewidth=1)
+                # Garis Merah = Kaki OFF (Toe Off / Swing)
+                ax_emg3.axvline(x=p["toe_off_time"], color='red', linestyle='--', linewidth=1)
+                
+            ax_emg3.set_title(f"Enveloped Filter (Cutoff: {cutoff_val} Hz) - Fase ON(Hijau) & OFF(Merah)")
             ax_emg3.set_xlabel("Waktu (s)")
             st.pyplot(fig_emg3, use_container_width=True)
             
             fig_act, ax_act = plt.subplots(figsize=(10, 5))
             for i in range(9):
-                segments = detect_activation_segments_manual(t, emg_env[i], 0.05)
+                # --- REVISI 3: PAKAI SLIDER THRESHOLD ---
+                segments = detect_activation_segments_manual(t, emg_env[i], thresh_emg)
                 bar_data = [(start, end - start) for start, end in segments]
                 y_pos = 8 - i
                 ax_act.broken_barh(bar_data, (y_pos - 0.25, 0.5), facecolors='#1f77b4')
