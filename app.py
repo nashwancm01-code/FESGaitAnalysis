@@ -3,7 +3,7 @@ import math
 import cmath # Untuk operasi bilangan kompleks pada FFT manual
 import matplotlib.pyplot as plt
 
-# --- 1. FUNGSI MATEMATIKA & DSP MANUAL (0% NUMPY/PANDAS) ---
+# --- 1. FUNGSI MATEMATIKA & DSP MANUAL ---
 
 def get_mean(data):
     if not data: return 0
