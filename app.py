@@ -1,6 +1,6 @@
 import streamlit as st
 import math
-import cmath # Untuk operasi bilangan kompleks pada FFT manual
+import cmath 
 import matplotlib.pyplot as plt
 
 # --- 1. FUNGSI MATEMATIKA & DSP MANUAL ---
@@ -13,7 +13,7 @@ def get_diff(data):
     return [data[i] - data[i-1] for i in range(1, len(data))]
 
 def normalize_signal(signal):
-    """Normalisasi sinyal menggunakan fungsi min/max bawaan Python"""
+    """Normalisasi sinyal menggunakan fungsi min/max"""
     if not signal: return []
     min_val = min(signal)
     max_val = max(signal)
@@ -23,7 +23,7 @@ def normalize_signal(signal):
 
 @st.cache_data
 def apply_manual_lpf(data, fs, cutoff=6, order=4):
-    """Low Pass Filter IIR manual menggunakan List Python"""
+    """Low Pass Filter IIR"""
     dt = 1.0 / fs
     if cutoff <= 0 or order < 1: return data
     fc_adj = cutoff / math.sqrt(2**(1.0 / order) - 1.0)
@@ -86,7 +86,7 @@ def radix2_fft(x):
 
 @st.cache_data
 def compute_stft_manual(signal, fs, nperseg=128):
-    """STFT manual tanpa scipy murni menggunakan list comprehension."""
+    """STFT."""
     step = nperseg // 2
     power_matrix = []
     time_bins = []
@@ -127,7 +127,7 @@ def load_and_process_data(file_bytes):
         
     if not data: return None, "Data tidak valid."
     
-    # Ekstrak per kolom (Murni List)
+    # Ekstrak per kolom 
     t = [row[0] for row in data]
     heel = [row[1] for row in data]
     toe = [row[2] for row in data]
