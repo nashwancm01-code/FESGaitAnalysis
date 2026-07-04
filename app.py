@@ -56,6 +56,24 @@ def detect_activation_segments_manual(time, signal, threshold):
         segments.append((start, time[-1]))
     return segments
 
+def manual_interpolate(source_list, target_len=100):
+    """Mengubah panjang array secara manual ke target_len (0-100%) menggunakan interpolasi linear"""
+    N = len(source_list)
+    if N < 2:
+        return [source_list[0] if source_list else 0.0] * target_len
+    interpolated = []
+    for i in range(target_len):
+        pos = (i / (target_len - 1)) * (N - 1)
+        idx_low = math.floor(pos)
+        idx_high = math.ceil(pos)
+        weight = pos - idx_low
+        if idx_low == idx_high:
+            val = source_list[idx_low]
+        else:
+            val = (1.0 - weight) * source_list[idx_low] + weight * source_list[idx_high]
+        interpolated.append(val)
+    return interpolated
+
 # --- FFT MANUAL UNTUK STFT ---
 def radix2_fft(x):
     """Algoritma Fast Fourier Transform murni Python."""
@@ -144,19 +162,12 @@ with st.sidebar:
     
     cutoff_val = st.slider(
         label="Cutoff Frequency LPF (Hz) EMG",
-        min_value=1.0,
-        max_value=20.0,
-        value=6.0,
-        step=0.1
+        min_value=1.0, max_value=20.0, value=6.0, step=0.1
     )
     
-    # --- REVISI 3: SLIDER THRESHOLD EMG ---
     thresh_emg = st.slider(
         label="Threshold EMG Activation",
-        min_value=0.01,
-        max_value=0.50,
-        value=0.15,
-        step=0.01
+        min_value=0.01, max_value=0.50, value=0.15, step=0.01
     )
 
 if uploaded_file is not None:
@@ -167,18 +178,15 @@ if uploaded_file is not None:
     else:
         st.sidebar.success(f"Jumlah Data : {len(data_dict['t'])}")
         
-        # Ekstraksi variabel utama
         t = data_dict['t']
         fs = data_dict['fs']
         
-        # --- Pre-processing Data FSR & Normalisasi ---
         heel_filt = apply_manual_lpf(data_dict['heel'], fs, cutoff=cutoff_val, order=4)
         toe_filt = apply_manual_lpf(data_dict['toe'], fs, cutoff=cutoff_val, order=4)
         
         heel_norm = normalize_signal(heel_filt)
         toe_norm = normalize_signal(toe_filt)
         
-        # --- Deteksi Fase 4 Titik (Murni Algoritma Loop Tanpa np.where) ---
         threshold_val = 0.05
         
         heel_rise = []
@@ -196,7 +204,6 @@ if uploaded_file is not None:
             if toe_norm[i] >= threshold_val and toe_norm[i+1] < threshold_val:
                 toe_fall.append(i + 1)
         
-        # --- Perhitungan Parameter Temporal ---
         gait_cycles = []
         for i in range(len(heel_rise) - 1):
             start_idx = int(heel_rise[i])
@@ -223,7 +230,6 @@ if uploaded_file is not None:
             end_time = cycle["end_time"]
             gait_cycle_time = cycle["duration"]
 
-            # Filter indeks toe_fall yang masuk dalam cycle ini secara manual
             toe_fall_in_cycle = [idx for idx in toe_fall if start_idx < idx < end_idx]
             if len(toe_fall_in_cycle) == 0:
                 continue
@@ -248,7 +254,7 @@ if uploaded_file is not None:
                 "swing_percent": round(swing_percent, 2)
             })
         
-        # --- Perhitungan Rata-rata Manual (Substitusi Pandas) ---
+        avg_stance_pct = 0.0
         if temporal_parameters:
             num_cycles = len(temporal_parameters)
             avg_start = sum(p["start_time"] for p in temporal_parameters) / num_cycles
@@ -272,7 +278,6 @@ if uploaded_file is not None:
                 "swing_percent": round(avg_swing_pct, 2)
             }
             
-            # Duplikasi list asli lalu tempel baris rata-rata di bawahnya
             df_display = list(temporal_parameters)
             df_display.append(avg_row)
             
@@ -290,10 +295,9 @@ if uploaded_file is not None:
         - Jumlah Cycle: {len(gait_cycles)}
         """)
 
-        # TABS SESUAI PYQT
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "GAIT PARAMETERS", "DYNAMIC EMG", "EMG PREPROCESSING", 
-            "PARAMETER (TABEL)", "STFT ANALYSIS"
+            "PARAMETER (TABEL)", "STFT ANALYSIS", "NORMALIZED SIKLUS (0-100%)"
         ])
         
         # TAB 1: GAIT PARAMETERS
@@ -371,11 +375,8 @@ if uploaded_file is not None:
             for i in range(9):
                 ax_emg3.plot(t, [val + i * offset_env for val in emg_env[i]], 'g-', linewidth=1.5)
             
-            # --- REVISI 2: GARIS ON/OFF DI GRAFIK EMG ---
             for p in temporal_parameters:
-                # Garis Hijau = Kaki ON (Heel Strike / Stance)
                 ax_emg3.axvline(x=p["start_time"], color='lime', linestyle='--', linewidth=1)
-                # Garis Merah = Kaki OFF (Toe Off / Swing)
                 ax_emg3.axvline(x=p["toe_off_time"], color='red', linestyle='--', linewidth=1)
                 
             ax_emg3.set_title(f"Enveloped Filter (Cutoff: {cutoff_val} Hz) - Fase ON(Hijau) & OFF(Merah)")
@@ -384,7 +385,6 @@ if uploaded_file is not None:
             
             fig_act, ax_act = plt.subplots(figsize=(10, 5))
             for i in range(9):
-                # --- REVISI 3: PAKAI SLIDER THRESHOLD ---
                 segments = detect_activation_segments_manual(t, emg_env[i], thresh_emg)
                 bar_data = [(start, end - start) for start, end in segments]
                 y_pos = 8 - i
@@ -421,11 +421,8 @@ if uploaded_file is not None:
         # TAB 4: PARAMETER (TABEL)
         with tab4:
             st.subheader("Temporal Parameters (Detailed per Cycle)")
-            # Menerima list of dicts secara langsung, tampilannya sama persis seperti DataFrame pandas
             st.dataframe(df_display, use_container_width=True)
-            
             st.markdown("---")
-            
             st.subheader("Joint Angle Parameters")
             joint_sel = st.selectbox("Pilih Joint:", ["hip", "knee", "ankle"])
             sig_j = data_dict[joint_sel]
@@ -451,7 +448,6 @@ if uploaded_file is not None:
             freqs, times_stft, power_matrix = compute_stft_manual(sig_stft, fs, nperseg=128)
             
             fig_stft, ax_stft = plt.subplots(figsize=(10, 4))
-            # pcolormesh bawaan matplotlib sanggup membaca list multi-dimensi tanpa numpy array
             c = ax_stft.pcolormesh(times_stft, freqs, power_matrix, shading='gouraud', cmap='viridis')
             fig_stft.colorbar(c, ax=ax_stft, label="Power")
             ax_stft.set_title("STFT Spectrogram")
@@ -459,5 +455,92 @@ if uploaded_file is not None:
             ax_stft.set_xlabel("Waktu (s)")
             ax_stft.set_ylim(0, 11)
             st.pyplot(fig_stft, use_container_width=True)
+
+        # TAB 6: NORMALIZED SIKLUS (0-100%)
+        with tab6:
+            st.subheader("Grafik Kinematik Gabungan per Segmen Siklus (0-100% Gait Cycle)")
+            if len(gait_cycles) > 0:
+                all_hip_norm = []
+                all_knee_norm = []
+                all_ankle_norm = []
+                
+                for cycle in gait_cycles:
+                    s_idx = cycle["start_idx"]
+                    e_idx = cycle["end_idx"]
+                    
+                    hip_seg = data_dict['hip'][s_idx:e_idx+1]
+                    knee_seg = data_dict['knee'][s_idx:e_idx+1]
+                    ankle_seg = data_dict['ankle'][s_idx:e_idx+1]
+                    
+                    all_hip_norm.append(manual_interpolate(hip_seg, 100))
+                    all_knee_norm.append(manual_interpolate(knee_seg, 100))
+                    all_ankle_norm.append(manual_interpolate(ankle_seg, 100))
+                
+                avg_hip = []
+                avg_knee = []
+                avg_ankle = []
+                for p_idx in range(100):
+                    avg_hip.append(sum(all_hip_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
+                    avg_knee.append(sum(all_knee_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
+                    avg_ankle.append(sum(all_ankle_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
+                
+                # Menentukan letak persentase titik IC dan TO
+                idx_ic = 0
+                idx_to = int(round(avg_stance_pct))
+                if idx_to >= 100: idx_to = 99 # Mencegah error index out of bounds
+                
+                fig_norm_cycles, axs = plt.subplots(1, 3, figsize=(15, 4.5))
+                x_percent = list(range(100))
+                
+                # Plot Hip
+                for cycle_data in all_hip_norm:
+                    axs[0].plot(x_percent, cycle_data, color='lightcoral', alpha=0.4, linewidth=0.8)
+                axs[0].plot(x_percent, avg_hip, color='red', linewidth=2.5, label='Mean Hip')
+                axs[0].plot(idx_ic, avg_hip[idx_ic], 'gs', markersize=8, label='IC (0%)')
+                axs[0].plot(idx_to, avg_hip[idx_to], 'rs', markersize=8, label=f'TO ({idx_to}%)')
+                axs[0].set_title("Hip Joint Angle", fontsize=10, fontweight='bold')
+                axs[0].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[0].set_ylabel("Degree (°)", fontsize=8)
+                axs[0].grid(True, linestyle=':')
+                axs[0].legend(fontsize=8)
+                
+                # Plot Knee
+                for cycle_data in all_knee_norm:
+                    axs[1].plot(x_percent, cycle_data, color='lightgreen', alpha=0.4, linewidth=0.8)
+                axs[1].plot(x_percent, avg_knee, color='green', linewidth=2.5, label='Mean Knee')
+                axs[1].plot(idx_ic, avg_knee[idx_ic], 'gs', markersize=8, label='IC (0%)')
+                axs[1].plot(idx_to, avg_knee[idx_to], 'rs', markersize=8, label=f'TO ({idx_to}%)')
+                axs[1].set_title("Knee Joint Angle", fontsize=10, fontweight='bold')
+                axs[1].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[1].grid(True, linestyle=':')
+                axs[1].legend(fontsize=8)
+                
+                # Plot Ankle
+                for cycle_data in all_ankle_norm:
+                    axs[2].plot(x_percent, cycle_data, color='lightblue', alpha=0.4, linewidth=0.8)
+                axs[2].plot(x_percent, avg_ankle, color='blue', linewidth=2.5, label='Mean Ankle')
+                axs[2].plot(idx_ic, avg_ankle[idx_ic], 'gs', markersize=8, label='IC (0%)')
+                axs[2].plot(idx_to, avg_ankle[idx_to], 'rs', markersize=8, label=f'TO ({idx_to}%)')
+                axs[2].set_title("Ankle Joint Angle", fontsize=10, fontweight='bold')
+                axs[2].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[2].grid(True, linestyle=':')
+                axs[2].legend(fontsize=8)
+                
+                st.pyplot(fig_norm_cycles, use_container_width=True)
+                
+                # --- TAMBAHAN TABEL TITIK IC DAN TO ---
+                st.markdown("---")
+                st.subheader("Detail Parameter Titik Sentuh (Kinematic Events)")
+                
+                tabel_titik = {
+                    "Joint": ["Hip Joint", "Knee Joint", "Ankle Joint"],
+                    "Nilai IC / 0% (deg)": [f"{avg_hip[idx_ic]:.2f}", f"{avg_knee[idx_ic]:.2f}", f"{avg_ankle[idx_ic]:.2f}"],
+                    f"Nilai TO / {idx_to}% (deg)": [f"{avg_hip[idx_to]:.2f}", f"{avg_knee[idx_to]:.2f}", f"{avg_ankle[idx_to]:.2f}"]
+                }
+                
+                st.table(tabel_titik)
+                
+            else:
+                st.warning("Belum ada siklus kaki yang terdeteksi untuk dianalisis.")
 else:
     st.info("Silakan unggah file data .txt dari menu sebelah kiri untuk memulai analisis.")
