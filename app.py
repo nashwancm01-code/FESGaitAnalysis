@@ -294,7 +294,6 @@ if uploaded_file is not None:
         - Jumlah Cycle: {len(gait_cycles)}
         """)
 
-        # --- TABS: NORMALIZED DIHAPUS, DIGABUNG KE TAB 4 ---
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "GAIT PARAMETERS", "DYNAMIC EMG", "EMG PREPROCESSING", 
             "SIKLUS & PARAMETER", "STFT ANALYSIS"
@@ -418,7 +417,7 @@ if uploaded_file is not None:
             ax_pre_res.legend()
             st.pyplot(fig_pre_res, use_container_width=True)
 
-        # --- TAB 4: SIKLUS GRAFIK DAN PARAMETER TABEL (GABUNGAN) ---
+        # --- TAB 4: SIKLUS GRAFIK DAN PARAMETER TABEL (GABUNGAN VERTIKAL) ---
         with tab4:
             st.subheader("Analisis Kinematik per Siklus (Normalized 0-100%)")
             
@@ -450,11 +449,11 @@ if uploaded_file is not None:
                 idx_to = int(round(stance_pct_val))
                 if idx_to >= 100: idx_to = 99 
                 
-                # 2. PLOT GRAFIK
-                fig_cyc, axs = plt.subplots(1, 3, figsize=(15, 4.5))
+                # 2. PLOT GRAFIK VERTIKAL (3 Baris, 1 Kolom)
+                fig_cyc, axs = plt.subplots(3, 1, figsize=(10, 12))
                 x_percent = list(range(100))
                 
-                # Plot Hip
+                # Plot Hip (Baris Atas)
                 axs[0].plot(x_percent, hip_cyc, color='red', linewidth=2.5, label=f'Hip ({pilihan_siklus})')
                 axs[0].plot(idx_ic, hip_cyc[idx_ic], 'gs', markersize=8, label='IC (0%)')
                 axs[0].plot(idx_to, hip_cyc[idx_to], 'rs', markersize=8, label=f'TO ({stance_pct_val}%)')
@@ -464,24 +463,27 @@ if uploaded_file is not None:
                 axs[0].grid(True, linestyle=':')
                 axs[0].legend(fontsize=8)
                 
-                # Plot Knee
+                # Plot Knee (Baris Tengah)
                 axs[1].plot(x_percent, knee_cyc, color='green', linewidth=2.5, label=f'Knee ({pilihan_siklus})')
                 axs[1].plot(idx_ic, knee_cyc[idx_ic], 'gs', markersize=8, label='IC (0%)')
                 axs[1].plot(idx_to, knee_cyc[idx_to], 'rs', markersize=8, label=f'TO ({stance_pct_val}%)')
                 axs[1].set_title(f"Knee Joint - {pilihan_siklus}", fontsize=10, fontweight='bold')
                 axs[1].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[1].set_ylabel("Degree (°)", fontsize=8)
                 axs[1].grid(True, linestyle=':')
                 axs[1].legend(fontsize=8)
                 
-                # Plot Ankle
+                # Plot Ankle (Baris Bawah)
                 axs[2].plot(x_percent, ankle_cyc, color='blue', linewidth=2.5, label=f'Ankle ({pilihan_siklus})')
                 axs[2].plot(idx_ic, ankle_cyc[idx_ic], 'gs', markersize=8, label='IC (0%)')
                 axs[2].plot(idx_to, ankle_cyc[idx_to], 'rs', markersize=8, label=f'TO ({stance_pct_val}%)')
                 axs[2].set_title(f"Ankle Joint - {pilihan_siklus}", fontsize=10, fontweight='bold')
                 axs[2].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[2].set_ylabel("Degree (°)", fontsize=8)
                 axs[2].grid(True, linestyle=':')
                 axs[2].legend(fontsize=8)
                 
+                fig_cyc.tight_layout()
                 st.pyplot(fig_cyc, use_container_width=True)
                 
                 # 3. TABEL VERTIKAL IC DAN TO
