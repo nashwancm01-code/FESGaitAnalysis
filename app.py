@@ -254,7 +254,6 @@ if uploaded_file is not None:
                 "swing_percent": round(swing_percent, 2)
             })
         
-        avg_stance_pct = 0.0
         if temporal_parameters:
             num_cycles = len(temporal_parameters)
             avg_start = sum(p["start_time"] for p in temporal_parameters) / num_cycles
@@ -295,9 +294,10 @@ if uploaded_file is not None:
         - Jumlah Cycle: {len(gait_cycles)}
         """)
 
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        # --- TABS: NORMALIZED DIHAPUS, DIGABUNG KE TAB 4 ---
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "GAIT PARAMETERS", "DYNAMIC EMG", "EMG PREPROCESSING", 
-            "PARAMETER (TABEL)", "STFT ANALYSIS", "NORMALIZED SIKLUS (0-100%)"
+            "SIKLUS & PARAMETER", "STFT ANALYSIS"
         ])
         
         # TAB 1: GAIT PARAMETERS
@@ -418,13 +418,97 @@ if uploaded_file is not None:
             ax_pre_res.legend()
             st.pyplot(fig_pre_res, use_container_width=True)
 
-        # TAB 4: PARAMETER (TABEL)
+        # --- TAB 4: SIKLUS GRAFIK DAN PARAMETER TABEL (GABUNGAN) ---
         with tab4:
+            st.subheader("Analisis Kinematik per Siklus (Normalized 0-100%)")
+            
+            if len(gait_cycles) > 0 and len(temporal_parameters) > 0:
+                # 1. DROPDOWN PILIH SIKLUS
+                cycle_opts = [f"Siklus {c['cycle']}" for c in gait_cycles]
+                pilihan_siklus = st.selectbox("Pilih Siklus untuk Divisualisasikan:", cycle_opts)
+                
+                # Mengambil index dari pilihan
+                idx_siklus = cycle_opts.index(pilihan_siklus)
+                
+                # Ekstrak data khusus siklus terpilih
+                s_idx = gait_cycles[idx_siklus]["start_idx"]
+                e_idx = gait_cycles[idx_siklus]["end_idx"]
+                
+                hip_seg = data_dict['hip'][s_idx:e_idx+1]
+                knee_seg = data_dict['knee'][s_idx:e_idx+1]
+                ankle_seg = data_dict['ankle'][s_idx:e_idx+1]
+                
+                # Interpolasi 0-100 khusus siklus tersebut
+                hip_cyc = manual_interpolate(hip_seg, 100)
+                knee_cyc = manual_interpolate(knee_seg, 100)
+                ankle_cyc = manual_interpolate(ankle_seg, 100)
+                
+                # Mengambil nilai akurat stance_percent dari temporal parameters
+                stance_pct_val = temporal_parameters[idx_siklus]["stance_percent"]
+                
+                idx_ic = 0
+                idx_to = int(round(stance_pct_val))
+                if idx_to >= 100: idx_to = 99 
+                
+                # 2. PLOT GRAFIK
+                fig_cyc, axs = plt.subplots(1, 3, figsize=(15, 4.5))
+                x_percent = list(range(100))
+                
+                # Plot Hip
+                axs[0].plot(x_percent, hip_cyc, color='red', linewidth=2.5, label=f'Hip ({pilihan_siklus})')
+                axs[0].plot(idx_ic, hip_cyc[idx_ic], 'gs', markersize=8, label='IC (0%)')
+                axs[0].plot(idx_to, hip_cyc[idx_to], 'rs', markersize=8, label=f'TO ({stance_pct_val}%)')
+                axs[0].set_title(f"Hip Joint - {pilihan_siklus}", fontsize=10, fontweight='bold')
+                axs[0].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[0].set_ylabel("Degree (°)", fontsize=8)
+                axs[0].grid(True, linestyle=':')
+                axs[0].legend(fontsize=8)
+                
+                # Plot Knee
+                axs[1].plot(x_percent, knee_cyc, color='green', linewidth=2.5, label=f'Knee ({pilihan_siklus})')
+                axs[1].plot(idx_ic, knee_cyc[idx_ic], 'gs', markersize=8, label='IC (0%)')
+                axs[1].plot(idx_to, knee_cyc[idx_to], 'rs', markersize=8, label=f'TO ({stance_pct_val}%)')
+                axs[1].set_title(f"Knee Joint - {pilihan_siklus}", fontsize=10, fontweight='bold')
+                axs[1].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[1].grid(True, linestyle=':')
+                axs[1].legend(fontsize=8)
+                
+                # Plot Ankle
+                axs[2].plot(x_percent, ankle_cyc, color='blue', linewidth=2.5, label=f'Ankle ({pilihan_siklus})')
+                axs[2].plot(idx_ic, ankle_cyc[idx_ic], 'gs', markersize=8, label='IC (0%)')
+                axs[2].plot(idx_to, ankle_cyc[idx_to], 'rs', markersize=8, label=f'TO ({stance_pct_val}%)')
+                axs[2].set_title(f"Ankle Joint - {pilihan_siklus}", fontsize=10, fontweight='bold')
+                axs[2].set_xlabel("Gait Cycle (%)", fontsize=8)
+                axs[2].grid(True, linestyle=':')
+                axs[2].legend(fontsize=8)
+                
+                st.pyplot(fig_cyc, use_container_width=True)
+                
+                # 3. TABEL VERTIKAL IC DAN TO
+                st.markdown(f"**Detail Titik Sentuh (Kinematic Events) - {pilihan_siklus}**")
+                
+                tabel_ic_to = [
+                    {"Joint": "Hip", "Event": "IC (0%)", "Derajat (°)": f"{hip_cyc[idx_ic]:.2f}"},
+                    {"Joint": "Hip", "Event": f"TO ({stance_pct_val}%)", "Derajat (°)": f"{hip_cyc[idx_to]:.2f}"},
+                    {"Joint": "Knee", "Event": "IC (0%)", "Derajat (°)": f"{knee_cyc[idx_ic]:.2f}"},
+                    {"Joint": "Knee", "Event": f"TO ({stance_pct_val}%)", "Derajat (°)": f"{knee_cyc[idx_to]:.2f}"},
+                    {"Joint": "Ankle", "Event": "IC (0%)", "Derajat (°)": f"{ankle_cyc[idx_ic]:.2f}"},
+                    {"Joint": "Ankle", "Event": f"TO ({stance_pct_val}%)", "Derajat (°)": f"{ankle_cyc[idx_to]:.2f}"}
+                ]
+                st.table(tabel_ic_to)
+            else:
+                st.warning("Belum ada siklus kaki yang terdeteksi.")
+            
+            st.markdown("---")
+            
+            # 4. TABEL BAWAAN: TEMPORAL & JOINT
             st.subheader("Temporal Parameters (Detailed per Cycle)")
             st.dataframe(df_display, use_container_width=True)
+            
             st.markdown("---")
-            st.subheader("Joint Angle Parameters")
-            joint_sel = st.selectbox("Pilih Joint:", ["hip", "knee", "ankle"])
+            
+            st.subheader("Joint Angle Parameters (Keseluruhan Data)")
+            joint_sel = st.selectbox("Pilih Joint untuk ROM Total:", ["hip", "knee", "ankle"])
             sig_j = data_dict[joint_sel]
             max_v, min_v = max(sig_j), min(sig_j)
             rom_v = max_v - min_v
@@ -456,91 +540,5 @@ if uploaded_file is not None:
             ax_stft.set_ylim(0, 11)
             st.pyplot(fig_stft, use_container_width=True)
 
-        # TAB 6: NORMALIZED SIKLUS (0-100%)
-        with tab6:
-            st.subheader("Grafik Kinematik Gabungan per Segmen Siklus (0-100% Gait Cycle)")
-            if len(gait_cycles) > 0:
-                all_hip_norm = []
-                all_knee_norm = []
-                all_ankle_norm = []
-                
-                for cycle in gait_cycles:
-                    s_idx = cycle["start_idx"]
-                    e_idx = cycle["end_idx"]
-                    
-                    hip_seg = data_dict['hip'][s_idx:e_idx+1]
-                    knee_seg = data_dict['knee'][s_idx:e_idx+1]
-                    ankle_seg = data_dict['ankle'][s_idx:e_idx+1]
-                    
-                    all_hip_norm.append(manual_interpolate(hip_seg, 100))
-                    all_knee_norm.append(manual_interpolate(knee_seg, 100))
-                    all_ankle_norm.append(manual_interpolate(ankle_seg, 100))
-                
-                avg_hip = []
-                avg_knee = []
-                avg_ankle = []
-                for p_idx in range(100):
-                    avg_hip.append(sum(all_hip_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
-                    avg_knee.append(sum(all_knee_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
-                    avg_ankle.append(sum(all_ankle_norm[c][p_idx] for c in range(len(gait_cycles))) / len(gait_cycles))
-                
-                # Menentukan letak persentase titik IC dan TO
-                idx_ic = 0
-                idx_to = int(round(avg_stance_pct))
-                if idx_to >= 100: idx_to = 99 # Mencegah error index out of bounds
-                
-                fig_norm_cycles, axs = plt.subplots(1, 3, figsize=(15, 4.5))
-                x_percent = list(range(100))
-                
-                # Plot Hip
-                for cycle_data in all_hip_norm:
-                    axs[0].plot(x_percent, cycle_data, color='lightcoral', alpha=0.4, linewidth=0.8)
-                axs[0].plot(x_percent, avg_hip, color='red', linewidth=2.5, label='Mean Hip')
-                axs[0].plot(idx_ic, avg_hip[idx_ic], 'gs', markersize=8, label='IC (0%)')
-                axs[0].plot(idx_to, avg_hip[idx_to], 'rs', markersize=8, label=f'TO ({idx_to}%)')
-                axs[0].set_title("Hip Joint Angle", fontsize=10, fontweight='bold')
-                axs[0].set_xlabel("Gait Cycle (%)", fontsize=8)
-                axs[0].set_ylabel("Degree (°)", fontsize=8)
-                axs[0].grid(True, linestyle=':')
-                axs[0].legend(fontsize=8)
-                
-                # Plot Knee
-                for cycle_data in all_knee_norm:
-                    axs[1].plot(x_percent, cycle_data, color='lightgreen', alpha=0.4, linewidth=0.8)
-                axs[1].plot(x_percent, avg_knee, color='green', linewidth=2.5, label='Mean Knee')
-                axs[1].plot(idx_ic, avg_knee[idx_ic], 'gs', markersize=8, label='IC (0%)')
-                axs[1].plot(idx_to, avg_knee[idx_to], 'rs', markersize=8, label=f'TO ({idx_to}%)')
-                axs[1].set_title("Knee Joint Angle", fontsize=10, fontweight='bold')
-                axs[1].set_xlabel("Gait Cycle (%)", fontsize=8)
-                axs[1].grid(True, linestyle=':')
-                axs[1].legend(fontsize=8)
-                
-                # Plot Ankle
-                for cycle_data in all_ankle_norm:
-                    axs[2].plot(x_percent, cycle_data, color='lightblue', alpha=0.4, linewidth=0.8)
-                axs[2].plot(x_percent, avg_ankle, color='blue', linewidth=2.5, label='Mean Ankle')
-                axs[2].plot(idx_ic, avg_ankle[idx_ic], 'gs', markersize=8, label='IC (0%)')
-                axs[2].plot(idx_to, avg_ankle[idx_to], 'rs', markersize=8, label=f'TO ({idx_to}%)')
-                axs[2].set_title("Ankle Joint Angle", fontsize=10, fontweight='bold')
-                axs[2].set_xlabel("Gait Cycle (%)", fontsize=8)
-                axs[2].grid(True, linestyle=':')
-                axs[2].legend(fontsize=8)
-                
-                st.pyplot(fig_norm_cycles, use_container_width=True)
-                
-                # --- TAMBAHAN TABEL TITIK IC DAN TO ---
-                st.markdown("---")
-                st.subheader("Detail Parameter Titik Sentuh (Kinematic Events)")
-                
-                tabel_titik = {
-                    "Joint": ["Hip Joint", "Knee Joint", "Ankle Joint"],
-                    "Nilai IC / 0% (deg)": [f"{avg_hip[idx_ic]:.2f}", f"{avg_knee[idx_ic]:.2f}", f"{avg_ankle[idx_ic]:.2f}"],
-                    f"Nilai TO / {idx_to}% (deg)": [f"{avg_hip[idx_to]:.2f}", f"{avg_knee[idx_to]:.2f}", f"{avg_ankle[idx_to]:.2f}"]
-                }
-                
-                st.table(tabel_titik)
-                
-            else:
-                st.warning("Belum ada siklus kaki yang terdeteksi untuk dianalisis.")
 else:
     st.info("Silakan unggah file data .txt dari menu sebelah kiri untuk memulai analisis.")
